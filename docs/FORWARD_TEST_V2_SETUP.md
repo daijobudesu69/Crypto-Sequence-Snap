@@ -1,0 +1,155 @@
+# Setup Forward Test — Sequence Snap Versi 2
+
+**Versi:** 2 — pola + RSI + **EMA200** (syarat #8: `close > EMA200`)
+**Watchlist:** ETHUSDT, BNBUSDT, XRPUSDT, DOGEUSDT, AVAXUSDT (4H)
+**Uang:** **paper trading**, modal kertas **$300**, risiko 1% = **$3 per trade**
+**Eksekusi:** otomatis oleh bot di GitHub Actions — lihat [README](../README.md)
+**Disiapkan:** 26 September 2026
+
+> Dokumen ini menggantikan [`arsip/FORWARD_TEST_V1_SETUP.md`](arsip/FORWARD_TEST_V1_SETUP.md).
+> Versi 1 sempat dipilih karena return in-sample-nya lebih tinggi, lalu diganti
+> ke Versi 2 sebelum trade pertama: Versi 1 **gagal** di uji out-of-sample
+> 2021–2023 (t = −0,07), Versi 2 satu-satunya yang bertahan (t = 1,99).
+>
+> Tapi MA200 sendiri **tidak lolos** uji formal (Bonferroni p = 0,200), dan
+> memilihnya *karena* ia selamat di OOS sudah memakai OOS untuk memutuskan.
+> **Forward test ini adalah ujian bersih pertamanya.** Conviction keseluruhan
+> tetap 20% (Report Bagian 10).
+
+---
+
+## 1. Checklist sebelum mulai
+
+- [ ] Baca [Report](Sequence%20Snap%20Report%20Trading%20Strategy.md) Bagian 2 (8 syarat entry) dan Bagian 10 (rekomendasi)
+- [ ] Jalankan workflow **"Ukur spot vs perp"** sekali (tab Actions → Run workflow).
+      Wajib hijau: ia mereplikasi contoh Report Bagian 3 dengan mesin repo ini.
+      Kalau merah, **jangan** mulai — mesinnya tidak sama dengan riset.
+- [ ] Baca hasilnya di `docs/SPOT_VS_PERP.md` — terutama kecocokan BNB dan AVAX
+- [ ] (nanti) Isi secret `TELEGRAM_BOT_TOKEN` dan `TELEGRAM_CHAT_ID`, lalu jalankan
+      workflow **"Kirim pesan tes"**
+- [ ] (opsional) Pasang `pine/SequenceSnap_v2.pine` di TradingView untuk verifikasi visual
+- [ ] Catat tanggal mulai — bot mencatatnya sendiri di baris `[bootstrap]` pertama
+      di `state/runs.csv` dan di `state/position.json`
+- [ ] Sepakati aturan berhenti di §6 SEBELUM trade pertama, bukan sesudah
+
+---
+
+## 2. Modal kertas $300
+
+$300 adalah ambang di mana hampir semua sinyal bisa dieksekusi tanpa ditolak
+MIN_NOTIONAL Binance (Report 6.3). Di bawah itu, sinyal ETH yang justru
+penyumbang besar mulai tertolak.
+
+| | Nilai |
+|---|---|
+| Modal kertas | $300 |
+| Risiko per trade | 1% modal **awal**, tidak di-compound = **$3,00** |
+| Qty | `$3 ÷ (harga entry − stop)` |
+| Komisi | 0,05% per sisi (sama dengan backtest) |
+| Funding | **tidak dihitung** (API perp tidak terjangkau) — Report: rata-rata +0,012 R/trade |
+| Slippage | **tidak dihitung** — paper fill di open / di level stop-target persis |
+
+### Acuan hasil (bukan janji)
+
+Dari Report 6.3, modal $300, **15 koin** (bukan 5 koin watchlist ini):
+
+| | Versi 2 (2024–26, in-sample) | **Versi 3 = V2 di 2021–23 (out-of-sample)** |
+|---|---:|---:|
+| $300 setelah 1 tahun | $390,32 (+30,1%) | **$332,06 (+10,7%)** |
+| Expectancy per trade | +0,2584 R | **+0,1915 R** |
+| Win rate | 51,7% | 49,4% |
+| Max drawdown | 20,55 R | 11,79 R |
+| Kalah beruntun terpanjang | 12 | 7 |
+
+**Yang tidak saya ketahui:** angka Versi 2 khusus untuk 5 koin ini tidak ada di
+Report. Workflow "Ukur spot vs perp" menghitung ΣR V2 per koin (perp,
+Jul 2024 – Ags 2026) sebagai pengganti kasarnya — tetap in-sample.
+
+---
+
+## 3. Bagaimana bot mengeksekusi (paper)
+
+| Langkah | Aturan | Sumber |
+|---|---|---|
+| Sinyal | 8 syarat Report 2.2 dievaluasi saat lilin 4H **tutup** | `snap/strategy.py` |
+| Entry | Harga **OPEN** lilin berikutnya | Report 2.3 |
+| Stop | `low[5]` — beku, **tidak ada trailing** | Report 2.3 |
+| Target | `close[0] + 1,5 × (close[0] − low[5])` — dari close sinyal, beku | Report 2.3 |
+| Exit | Stop atau target, mana yang kena dulu. Dua-duanya di lilin sama → **stop** | Report 4.1 |
+| Gap | Open sudah melewati stop/target → terisi di **open** | PROJECT_LOG asumsi F |
+| Batas waktu | **Tidak ada** — posisi ditahan sampai stop/target | Report 4.1 |
+| Posisi | Maks. 1 per koin, tidak ada pyramiding, **long saja** | Report 4.2 |
+
+Bot mengecek ~45 detik setelah tiap lilin tutup, lalu mengirim sinyal ke
+Telegram. Kalau Anda juga ingin mengeksekusi manual (paper di exchange / testnet),
+isi `forward_test_log.csv` dengan harga fill Anda sendiri — bandingkan dengan
+`state/trades.csv` milik bot (nama kolomnya sama).
+
+### Tracking error yang harus diingat
+
+Backtest memakai data **Binance perp**. Bot memakai **Binance spot** (API perp
+diblokir dari runner GitHub, HTTP 451), dengan Gate.io perp sebagai cadangan.
+Sebagian kecil sinyal akan berbeda dari yang backtest hasilkan. Besarnya diukur
+per koin di `docs/SPOT_VS_PERP.md`; sumber data dicatat di setiap baris log.
+
+---
+
+## 4. Ekspektasi frekuensi — lebih jarang dari Versi 1
+
+| Sumber | Trade/bulan | Per koin/bulan | Untuk 5 koin |
+|---|---:|---:|---:|
+| V2, 15 koin, 2024–26 | 9,7 | 0,65 | **~3,2/bulan** |
+| V3, 8 koin, 2021–23 | 4,7 | 0,59 | **~2,9/bulan** |
+
+Rata-rata **~1 trade tiap 10 hari**. Filter EMA200 membuang ~37% trade Versi 1
+(503 → 315), yaitu semua yang muncul saat harga di bawah EMA200 — jadi di bear
+market bisa **berbulan-bulan tanpa sinyal**. Itu perilaku yang diharapkan, bukan bot rusak
+(heartbeat harian yang membuktikan bot masih hidup).
+
+**Sampel 100 trade butuh sekitar 2,5–3 tahun** di 5 koin. Report 10.1
+menyarankan 8–15 koin justru karena ini. Menambah koin di tengah jalan mengubah
+eksperimennya — kalau mau, putuskan sebelum trade pertama.
+
+---
+
+## 5. Log
+
+| File | Diisi oleh | Isi |
+|---|---|---|
+| `state/trades.csv` | bot | Satu baris per trade selesai. Kolom = `forward_test_log.csv` + provenance |
+| `state/events.csv` | bot | SIGNAL / ENTRY / EXIT dengan snapshot RSI, EMA200, OHLC |
+| `state/runs.csv` | bot | Bukti hidup tiap run, sumber data, status Telegram |
+| `forward_test_log.csv` | Anda (opsional) | Fill manual Anda sendiri kalau ikut eksekusi |
+
+Kolom yang sengaja dibiarkan kosong oleh bot: `slippage_entry_tick`,
+`slippage_exit_tick`, `funding_dibayar_usd`. Tiga-tiganya hanya bisa diisi dari
+eksekusi sungguhan.
+
+---
+
+## 6. Aturan berhenti — disepakati SEKARANG
+
+Bot **memeriksa** aturan ini di tiap pesan EXIT dan heartbeat harian, dan
+menandainya dengan 🚨. Bot **tidak** menghentikan dirinya sendiri — keputusan
+berhenti tetap di tangan Anda.
+
+| Kondisi | Tindakan |
+|---|---|
+| Drawdown modal kertas menembus **−20%** (−$60 kalau puncaknya $300) | Berhenti, evaluasi ulang |
+| **15 kekalahan beruntun** (rekor historis V2: 12) | Berhenti |
+| Setelah **100 trade**, expectancy ≤ 0 | Strategi ditolak untuk watchlist ini |
+| Ada sinyal live yang **tidak cocok** dengan 8 syarat Report 2.2 | Hentikan sementara, cari sebabnya |
+| Kecocokan spot vs perp suatu koin **< 90%** | Pertimbangkan mengeluarkan koin itu — **sebelum** trade pertama |
+
+---
+
+## 7. Yang harus diingat sepanjang forward test
+
+1. **Ini bukan strategi yang terbukti.** Conviction 20%. MA200 adalah hipotesis.
+2. **Bandingkan dengan Versi 3, bukan Versi 2.** Acuan jujurnya +0,19 R/trade
+   dan win rate ~49%. Angka Versi 2 (+0,26 R) adalah batas atas in-sample.
+3. **Tahun pertama bisa flat atau rugi.** Di backtest, 2022 (bear) −10,12 R.
+4. **Jangan menambah filter di tengah jalan** (Report 4.2). Satu-satunya yang
+   boleh berubah di `config.yaml` tanpa merusak eksperimen: tidak ada.
+5. **Tulis kegagalan sejelas keberhasilan.** Forward test yang gagal adalah
+   hasil yang valid.

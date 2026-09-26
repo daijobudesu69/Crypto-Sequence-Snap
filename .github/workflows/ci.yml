@@ -1,0 +1,26 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["state/**", "**.md"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Gerbang sesungguhnya: offline, deterministik, tidak menyentuh jaringan.
+  # Kalau merah, repo sudah menyimpang dari strategi yang divalidasi.
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Tes strategi (parity riset, syarat Report, mesin posisi)
+        run: python tests/test_strategy.py
+      - name: Tes pipa (outbox, dedup, state, feed mundur)
+        run: python tests/test_infra.py

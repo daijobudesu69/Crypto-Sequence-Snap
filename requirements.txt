@@ -1,0 +1,7 @@
+# Dipin ke versi yang sama dengan Crypto-MEX, yang sudah terbukti jalan di
+# produksi (Python 3.11, ubuntu-latest). Naikkan lewat PR supaya CI mengujinya
+# dulu -- rilis baru pandas/numpy tidak boleh mematikan forward test diam-diam.
+numpy==2.4.6
+pandas==3.0.5
+requests==2.34.2
+PyYAML==6.0.3

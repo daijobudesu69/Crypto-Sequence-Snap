@@ -1,0 +1,32 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Sequence Snap Versi 2 — forward test (paper trading)
+#
+#  Parameter strategi di bawah SAMA PERSIS dengan Report Bagian 4.3 dan
+#  pine/SequenceSnap_v2.pine. Mengubahnya membuat forward test tidak lagi
+#  sebanding dengan backtest. Kalau terpaksa diubah, catat tanggal dan alasannya
+#  di CHANGELOG.md -- jangan diam-diam. Report 4.2 melarang menambah filter,
+#  mengubah target, dan menyalakan short.
+#
+#  Watchlist dan timeframe TIDAK diatur di sini -- dikunci di snap/datafeed.py
+#  (SYMBOLS, INTERVAL). Kunci `symbols`/`timeframe` di sini akan ditolak.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# binance_spot_mirror = data-api.binance.vision (utama)
+# gate_io_perp        = cadangan otomatis kalau yang utama mati
+prefer_source: binance_spot_mirror
+
+paper:
+  capital_usd:    300     # modal kertas. Risiko dihitung dari modal AWAL, tidak di-compound
+  risk_pct:       1.0     # 1R = $3 di modal $300
+  commission_pct: 0.05    # per sisi, sama dengan backtest
+
+strategy:
+  run_length:       5       # lilin hijau setelah lilin merah
+  tolerance_pct:    0.05    # wobble allowance, persen
+  rsi_length:       14
+  rsi_min_long:     40
+  use_rsi_filter:   true
+  use_trend_filter: true    # syarat #8 Versi 2. false = Versi 1 -- JANGAN
+  ma_length:        200
+  ma_type:          EMA     # Report menguji EMA; SMA belum pernah diuji
+  take_profit_r:    1.5

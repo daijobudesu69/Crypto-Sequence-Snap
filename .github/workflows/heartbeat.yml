@@ -1,0 +1,55 @@
+name: Sequence Snap heartbeat
+
+# CADANGAN. Heartbeat harian normalnya dikirim oleh loop pemantau di signal.yml
+# (<=10 menit dari 00:00 UTC = 07:00 WIB). Workflow ini hanya jaring pengaman
+# saat pemantau MATI -- dan heartbeat yang telat itu sendiri alarmnya.
+#
+# Jadwal sengaja di jam sepi: slot 00:0x UTC paling padat di antrean GitHub
+# (di MEX pesan jam itu telat ~4 jam setiap hari). run_heartbeat.py menolak
+# kirim kalau hari ini sudah terkirim, jadi tidak akan dobel.
+on:
+  schedule:
+    - cron: "27 1,5,9 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "kirim heartbeat sekarang walau hari ini sudah terkirim"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  # Grup TERPISAH dari signal.yml: GitHub hanya menyimpan satu run pending per
+  # grup, jadi berbagi grup membuat heartbeat nyaris selalu tergusur diam-diam.
+  group: snap-heartbeat-state
+  cancel-in-progress: false
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Kirim heartbeat
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SNAP_FORCE_HEARTBEAT: ${{ inputs.force && '1' || '0' }}
+        run: |
+          bash tools/refresh_state.sh || true
+          python run_heartbeat.py
+
+      - name: Simpan state ke repo
+        if: always()
+        run: |
+          bash tools/save_state.sh "heartbeat: $(date -u +%Y-%m-%d)"

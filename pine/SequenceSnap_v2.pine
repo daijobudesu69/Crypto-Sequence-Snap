@@ -1,0 +1,301 @@
+// Sequence Snap — VERSI 2 (indikator + MA200)
+// ============================================================================
+// Versi ini adalah source asli "Sequence Snap | RSI-Confirmed Reversal Scalper"
+// dengan TIGA perubahan, semuanya sengaja, semuanya didokumentasikan:
+//
+//   1. FILTER MA200 DITAMBAHKAN (syarat #8). Long hanya diambil kalau
+//      close > EMA200. Ini satu-satunya bagian strategi yang bertahan di uji
+//      out-of-sample 2021-2023; versi tanpa filter ini menghasilkan t = -0,07
+//      (nol) sambil tetap menanggung drawdown penuh.
+//
+//   2. SIZING BERBASIS RISIKO, bukan percent_of_equity. Tiap trade
+//      mempertaruhkan `riskPct` % equity. Ini yang dipakai di seluruh laporan,
+//      dan yang membuat hasilnya bisa dibaca dalam satuan R.
+//
+//   3. VISUAL DAN ALERT untuk forward test: garis EMA200, level stop/target,
+//      panel status, dan alert saat sinyal terbentuk.
+//
+// Logika deteksi pola TIDAK DISENTUH sama sekali — loop, pertidaksamaan, dan
+// urutan indeksnya sama persis dengan source aslinya.
+//
+// ----------------------------------------------------------------------------
+// PERINGATAN SEBELUM DIPAKAI
+//
+// Strategi ini DITOLAK untuk uang sungguhan. Conviction 20%.
+//   - Out-of-sample 2021-2023 tanpa MA200: expectancy -0,005 R, t = -0,07
+//   - Bear market 2022 tanpa MA200: -28,48 R; dengan MA200: -10,12 R
+//   - Filter MA200 sendiri GAGAL uji formal (Bonferroni p = 0,200), dan
+//     penurunan drawdown-nya terbukti artefak jumlah trade
+//   - Sisi short: t = 0,51 — jangan dinyalakan
+//
+// Detail lengkap: "Sequence Snap Report Trading Strategy.md" di root repo.
+// ----------------------------------------------------------------------------
+//@version=6
+
+strategy(
+     "Sequence Snap v2 | Pattern + MA200",
+     overlay              = true,
+     pyramiding           = 0,
+     initial_capital      = 300,
+     currency             = currency.USD,
+     default_qty_type     = strategy.fixed,
+     commission_type      = strategy.commission.percent,
+     commission_value     = 0.05,
+     slippage             = 1,
+     margin_long          = 5,
+     margin_short         = 5,
+     calc_on_every_tick   = false,
+     process_orders_on_close = false
+ )
+
+// ── Inputs: pattern shape ─────────────────────────────────────────────────────
+grpSeq = "1 · Pattern Shape"
+runLength = input.int(
+     5, "Candles In The Run", options = [2, 3, 4, 5], group = grpSeq,
+     tooltip = "Berapa lilin searah setelah lilin reversal. DIKUNCI di 5."
+ )
+tolerancePct = input.float(
+     0.05, "Wobble Allowance (%)", step = 0.01, group = grpSeq,
+     tooltip = "Toleransi satu lilin tutup sedikit di bawah lilin sebelumnya. DIKUNCI di 0.05."
+ )
+
+// ── Inputs: RSI check ─────────────────────────────────────────────────────────
+grpRsi = "2 · Momentum Check"
+useRsiFilter = input.bool(true, "Require RSI Agreement", group = grpRsi,
+     tooltip = "Catatan hasil uji: di ETHUSDT filter ini membuang NOL dari 53 sinyal. Praktis tidak menggigit.")
+rsiLen       = input.int(14, "RSI Length", group = grpRsi)
+rsiMinLong   = input.int(40, "RSI Floor For Longs", group = grpRsi)
+rsiMaxShort  = input.int(60, "RSI Ceiling For Shorts", group = grpRsi)
+
+// ── Inputs: trend filter — INI YANG BARU DI VERSI 2 ──────────────────────────
+grpTrend = "3 · Trend Filter (VERSI 2)"
+useTrendFilter = input.bool(
+     true, "Require Close Above MA200", group = grpTrend,
+     tooltip = "MATIKAN ini = Versi 1. Versi 1 menghasilkan NOL di uji out-of-sample 2021-2023."
+ )
+maLen  = input.int(200, "MA Length", group = grpTrend)
+maType = input.string("EMA", "MA Type", options = ["EMA", "SMA"], group = grpTrend,
+     tooltip = "Uji di laporan memakai EMA. SMA belum diuji.")
+
+// ── Inputs: trade management ──────────────────────────────────────────────────
+grpTrade = "4 · Trade Management"
+takeProfitR = input.string("1.5R", "Reward Target", options = ["0.5R", "1R", "1.5R", "2R"], group = grpTrade,
+     tooltip = "DIKUNCI di 1.5R. Nilai lain tidak pernah diuji.")
+enableLongTrades  = input.bool(true,  "Allow Longs",  group = grpTrade)
+enableShortTrades = input.bool(false, "Allow Shorts", group = grpTrade,
+     tooltip = "JANGAN dinyalakan. Sisi short diuji di 432 trade: t = 0,51, tidak bisa dibedakan dari lempar koin.")
+
+grpRisk = "5 · Position Sizing"
+useRiskSizing = input.bool(true, "Size By Risk (bukan % equity)", group = grpRisk)
+riskPct = input.float(1.0, "Risk Per Trade (% equity)", minval = 0.1, maxval = 5.0, step = 0.1, group = grpRisk,
+     tooltip = "Seluruh laporan memakai 1%. Drawdown historis 12-30% di angka ini.")
+fixedQtyPct = input.float(20.0, "Fallback: % Of Equity", minval = 1, maxval = 100, group = grpRisk,
+     tooltip = "Dipakai hanya kalau Size By Risk dimatikan. Ini sizing source aslinya.")
+
+// ── Inputs: visuals ───────────────────────────────────────────────────────────
+grpVis = "6 · Visuals"
+showSignal = input.bool(true,  "Show Entry Arrows",        group = grpVis)
+showSLTP   = input.bool(true,  "Show Stop / Target Lines", group = grpVis)
+showMA     = input.bool(true,  "Show MA200",               group = grpVis)
+showFlash  = input.bool(true,  "Flash Background On Entry",group = grpVis)
+showDash   = input.bool(true,  "Show Dashboard",           group = grpVis)
+dashPos    = input.string("Top Right", "Dashboard Position", options = ["Top Right", "Bottom Right", "Top Left", "Bottom Left"], group = grpVis)
+colBull    = input.color(#00c176, "Bull Color",      group = grpVis)
+colBear    = input.color(#ff3b30, "Bear Color",      group = grpVis)
+colMA      = input.color(#f0b90b, "MA200 Color",     group = grpVis)
+colDashBg  = input.color(#161b22, "Panel Background",group = grpVis)
+colDashHead= input.color(#0d1117, "Header Background",group = grpVis)
+
+// ── R multiple lookup ─────────────────────────────────────────────────────────
+rrMultiple = switch takeProfitR
+    "0.5R" => 0.5
+    "1R"   => 1.0
+    "1.5R" => 1.5
+    "2R"   => 2.0
+    => 1.5
+
+// ── State ─────────────────────────────────────────────────────────────────────
+var float stopLossPrice   = na
+var float takeProfitPrice = na
+var float stopDisplay     = na
+var float tpDisplay       = na
+
+// ── Indicators ────────────────────────────────────────────────────────────────
+rsiVal     = ta.rsi(close, rsiLen)
+rsiRising  = rsiVal > rsiVal[1]
+rsiFalling = rsiVal < rsiVal[1]
+
+rsiOkLong  = not useRsiFilter or (rsiVal > rsiMinLong and rsiRising)
+rsiOkShort = not useRsiFilter or (rsiVal < rsiMaxShort and rsiFalling)
+
+maValue   = maType == "EMA" ? ta.ema(close, maLen) : ta.sma(close, maLen)
+trendOkLong  = not useTrendFilter or (close > maValue)
+trendOkShort = not useTrendFilter or (close < maValue)
+
+// ── Reversal candle: the one the run breaks away from ────────────────────────
+reversalWasDown = close[runLength] < open[runLength]
+reversalWasUp   = close[runLength] > open[runLength]
+
+// ── Check the run holds together, bullish direction ──────────────────────────
+// CATATAN INDEKS: close[i + 1] adalah lilin yang LEBIH LAMA, bukan lebih baru.
+// Loop `i < runLength - 1` berarti hanya 4 pasang yang diuji toleransi (i = 0..3),
+// karena pasangan terakhir akan menyentuh lilin reversal.
+bool runIsBullish = true
+
+for i = 0 to runLength - 1
+    if close[i] <= open[i]
+        runIsBullish := false
+    if low[i] <= low[runLength]
+        runIsBullish := false
+    if i < runLength - 1
+        floorClose = close[i + 1] * (1 - tolerancePct / 100)
+        if close[i] <= floorClose
+            runIsBullish := false
+
+// ── Check the run holds together, bearish direction ───────────────────────────
+bool runIsBearish = true
+
+for i = 0 to runLength - 1
+    if close[i] >= open[i]
+        runIsBearish := false
+    if high[i] >= high[runLength]
+        runIsBearish := false
+    if i < runLength - 1
+        ceilClose = close[i + 1] * (1 + tolerancePct / 100)
+        if close[i] >= ceilClose
+            runIsBearish := false
+
+// ── Combine pattern + momentum + trend ────────────────────────────────────────
+longSetup  = reversalWasDown and runIsBullish and rsiOkLong  and trendOkLong
+shortSetup = reversalWasUp   and runIsBearish and rsiOkShort and trendOkShort
+
+// ── Position sizing ───────────────────────────────────────────────────────────
+// Risiko tetap: qty = (equity x riskPct%) / jarak ke stop.
+// Catatan: strategy.equity IKUT COMPOUND. Laporan memakai risiko tetap dari
+// modal AWAL (tanpa compounding) supaya R bisa dijumlahkan linear. Beda ini
+// tidak mengubah sinyal maupun win rate, hanya bentuk kurva equity.
+f_qty(float riskPerUnit) =>
+    float q = na
+    if useRiskSizing and not na(riskPerUnit) and riskPerUnit > 0
+        q := (strategy.equity * riskPct / 100.0) / riskPerUnit
+    else
+        q := (strategy.equity * fixedQtyPct / 100.0) / close
+    q
+
+// ── Long entry ────────────────────────────────────────────────────────────────
+if enableLongTrades and longSetup and strategy.position_size == 0
+    stopLossPrice := low[runLength]
+    riskPts = close - stopLossPrice
+    takeProfitPrice := close + riskPts * rrMultiple
+    strategy.entry("Long", strategy.long, qty = f_qty(riskPts))
+
+// ── Short entry (biarkan mati — t = 0,51 di backtest) ────────────────────────
+if enableShortTrades and shortSetup and strategy.position_size == 0
+    stopLossPrice := high[runLength]
+    riskPts = stopLossPrice - close
+    takeProfitPrice := close - riskPts * rrMultiple
+    strategy.entry("Short", strategy.short, qty = f_qty(riskPts))
+
+// ── Exits: satu stop, satu target, selesai ───────────────────────────────────
+if not na(stopLossPrice) and strategy.position_size > 0
+    strategy.exit("Long Exit", from_entry = "Long", stop = stopLossPrice, limit = takeProfitPrice)
+
+if not na(stopLossPrice) and strategy.position_size < 0
+    strategy.exit("Short Exit", from_entry = "Short", stop = stopLossPrice, limit = takeProfitPrice)
+
+// ── Track lines only while a trade is open ────────────────────────────────────
+if strategy.position_size == 0
+    stopDisplay := na
+    tpDisplay := na
+else
+    stopDisplay := stopLossPrice
+    tpDisplay := takeProfitPrice
+
+// ── Visuals ───────────────────────────────────────────────────────────────────
+plot(showMA ? maValue : na, "MA200", color = colMA, linewidth = 2)
+
+bgcolor(showFlash and longSetup  and enableLongTrades  and strategy.position_size == 0 ? color.new(colBull, 85) : na, title = "Long Entry Flash")
+bgcolor(showFlash and shortSetup and enableShortTrades and strategy.position_size == 0 ? color.new(colBear, 85) : na, title = "Short Entry Flash")
+
+plotshape(
+     showSignal and enableLongTrades and longSetup and strategy.position_size == 0,
+     title = "Long Signal", location = location.belowbar, color = colBull, style = shape.triangleup, size = size.small
+ )
+plotshape(
+     showSignal and enableShortTrades and shortSetup and strategy.position_size == 0,
+     title = "Short Signal", location = location.abovebar, color = colBear, style = shape.triangledown, size = size.small
+ )
+
+plot(showSLTP ? stopDisplay : na, "Stop Loss",   color = colBear, linewidth = 2, style = plot.style_linebr)
+plot(showSLTP ? tpDisplay   : na, "Take Profit", color = colBull, linewidth = 2, style = plot.style_linebr)
+
+// ── Alerts untuk forward test ─────────────────────────────────────────────────
+// Dipasang di bar sinyal (bar 0 tutup). Eksekusi terjadi di OPEN lilin berikutnya.
+alertcondition(longSetup, "Sequence Snap v2 — LONG setup",
+     "Sequence Snap v2 LONG setup terbentuk. Entry di OPEN lilin berikutnya. Cek stop & target di panel.")
+
+if longSetup and enableLongTrades and strategy.position_size == 0
+    alert("SEQUENCE SNAP v2 LONG | " + syminfo.ticker +
+          " | close " + str.tostring(close, format.mintick) +
+          " | stop "  + str.tostring(low[runLength], format.mintick) +
+          " | target "+ str.tostring(close + (close - low[runLength]) * rrMultiple, format.mintick) +
+          " | risk "  + str.tostring((close - low[runLength]) / close * 100, "#.##") + "%" +
+          " | ENTRY di OPEN lilin berikutnya",
+          alert.freq_once_per_bar_close)
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+f_dashPos(p) =>
+    switch p
+        "Top Right"    => position.top_right
+        "Bottom Right" => position.bottom_right
+        "Top Left"     => position.top_left
+        => position.bottom_left
+
+var table dash = table.new(f_dashPos(dashPos), 2, 11, border_width = 1, border_color = color.new(colBull, 60))
+
+if showDash and barstate.islast
+    dbg   = color.new(colDashBg, 0)
+    hdr   = color.new(colDashHead, 0)
+    muted = color.new(#8b949e, 0)
+
+    posText  = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT"
+    posColor = strategy.position_size > 0 ? colBull : strategy.position_size < 0 ? colBear : muted
+
+    trendText  = close > maValue ? "DI ATAS MA200" : "DI BAWAH MA200"
+    trendColor = close > maValue ? colBull : colBear
+
+    rsiColor = rsiVal > rsiMinLong and rsiRising ? colBull : muted
+    rsiText  = str.tostring(rsiVal, "#.#") + (rsiRising ? " ↑" : " ↓")
+
+    table.cell(dash, 0, 0, "Sequence Snap v2", text_color = color.white, bgcolor = hdr, text_halign = text.align_left)
+    table.cell(dash, 1, 0, syminfo.ticker + " · " + timeframe.period, text_color = muted, bgcolor = hdr, text_halign = text.align_right)
+
+    table.cell(dash, 0, 1, "Position", text_color = muted, bgcolor = dbg)
+    table.cell(dash, 1, 1, posText, text_color = posColor, bgcolor = dbg, text_halign = text.align_right)
+
+    table.cell(dash, 0, 2, "Trend (syarat #8)", text_color = muted, bgcolor = dbg)
+    table.cell(dash, 1, 2, useTrendFilter ? trendText : "FILTER OFF (= Versi 1)", text_color = useTrendFilter ? trendColor : colBear, bgcolor = dbg, text_halign = text.align_right)
+
+    table.cell(dash, 0, 3, "RSI(" + str.tostring(rsiLen) + ")", text_color = muted, bgcolor = dbg)
+    table.cell(dash, 1, 3, rsiText, text_color = rsiColor, bgcolor = dbg, text_halign = text.align_right)
+
+    table.cell(dash, 0, 4, "Stop", text_color = muted, bgcolor = dbg)
+    table.cell(dash, 1, 4, na(stopDisplay) ? "—" : str.tostring(stopDisplay, format.mintick), text_color = colBear, bgcolor = dbg, text_halign = text.align_right)
+
+    table.cell(dash, 0, 5, "Target", text_color = muted, bgcolor = dbg)
+    table.cell(dash, 1, 5, na(tpDisplay) ? "—" : str.tostring(tpDisplay, format.mintick), text_color = colBull, bgcolor = dbg, text_halign = text.align_right)
+
+    table.cell(dash, 0, 6, "Risk per trade", text_color = muted, bgcolor = dbg)
+    table.cell(dash, 1, 6, useRiskSizing ? str.tostring(riskPct, "#.#") + "% equity" : str.tostring(fixedQtyPct, "#") + "% notional", text_color = color.white, bgcolor = dbg, text_halign = text.align_right)
+
+    table.cell(dash, 0, 7, "Target R", text_color = muted, bgcolor = dbg)
+    table.cell(dash, 1, 7, takeProfitR, text_color = color.white, bgcolor = dbg, text_halign = text.align_right)
+
+    table.cell(dash, 0, 8, "Longs / Shorts", text_color = muted, bgcolor = dbg)
+    table.cell(dash, 1, 8, (enableLongTrades ? "ON" : "OFF") + " / " + (enableShortTrades ? "ON" : "OFF"), text_color = enableShortTrades ? colBear : color.white, bgcolor = dbg, text_halign = text.align_right)
+
+    table.cell(dash, 0, 9, "Trades", text_color = muted, bgcolor = dbg)
+    table.cell(dash, 1, 9, str.tostring(strategy.closedtrades), text_color = color.white, bgcolor = dbg, text_halign = text.align_right)
+
+    table.cell(dash, 0, 10, "Versi", text_color = muted, bgcolor = dbg)
+    table.cell(dash, 1, 10, useTrendFilter ? "2 (pattern + MA200)" : "1 (pattern saja)", text_color = useTrendFilter ? colBull : colBear, bgcolor = dbg, text_halign = text.align_right)

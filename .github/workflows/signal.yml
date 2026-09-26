@@ -1,0 +1,115 @@
+name: Sequence Snap signal
+
+# Pola ini diambil dari Crypto-MEX, yang sudah membayar pelajarannya:
+#
+# Cron GitHub TIDAK dijamin jalan. Di MEX keandalannya terukur hanya 23-26%
+# (12 dari ~46 jadwal dalam 26 jam, jeda terburuk 4j48m). Menambah baris cron
+# tidak menolong -- yang bermasalah GitHub yang tidak menjalankannya.
+#
+# Jadi cron TIDAK bertugas mengecek. Tugasnya hanya MENYALAKAN pemantau yang
+# lalu hidup ~5,5 jam dan mengecek sendiri dari dalam. Satu cron yang berhasil
+# menutupi 5,5 jam berikutnya; dengan concurrency group, jadwal yang jatuh saat
+# pemantau masih hidup ANTRE lalu langsung mulai begitu yang lama selesai.
+#
+# BEDA DARI MEX -- lebih cepat: selain tiap 10 menit, pemantau juga bangun
+# ~45 detik setelah SETIAP lilin 4H tutup (00/04/08/12/16/20 UTC). Entry
+# Sequence Snap adalah open lilin berikutnya = detik lilin sinyal tutup, jadi
+# yang menentukan adalah jeda setelah tutup, bukan seberapa sering mengecek.
+# MEX bisa telat sampai 10 menit; di sini targetnya ~1 menit.
+#
+# Repo ini PUBLIK: menit GitHub Actions untuk repo publik tidak dibatasi, jadi
+# job panjang tidak memakan kuota. Di repo privat pola ini menghabiskan kuota
+# gratis 2.000 menit per bulan dalam ~1,5 hari.
+on:
+  schedule:
+    - cron: "11,41 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "once = satu kali cek lalu selesai; loop = pantau ~5,5 jam"
+        type: choice
+        options: [once, loop]
+        default: once
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snap-state
+  cancel-in-progress: false
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Riwayat penuh: rebase di loop retry save_state.sh butuh merge base.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Pantau sinyal
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Tanpa ini runs.csv dapat satu baris (dan satu commit) tiap cek.
+          # Run yang memproses bar, memunculkan event, atau gagal selalu dicatat.
+          SNAP_QUIET_IDLE: "1"
+          MODE: ${{ inputs.mode || 'loop' }}
+        run: |
+          set -uo pipefail
+          INTERVAL=600                    # cek rutin tiap 10 menit
+          AFTER_CLOSE=45                  # ... dan 45 detik setelah tiap lilin 4H tutup
+          DEADLINE=$(( $(date +%s) + 5*3600 + 30*60 ))
+          worst=0
+          n=0
+
+          echo "[watch] mode=${MODE}"
+          while :; do
+            n=$((n + 1))
+            echo "::group::cek #${n} — $(date -u '+%Y-%m-%d %H:%M:%SZ')"
+
+            # Tarik state terbaru dulu. Tanpa ini, job yang checkout sebelum push
+            # terakhir job sebelumnya mendarat bisa memproses ulang bar yang
+            # sudah selesai -- dan mengirim sinyal dua kali.
+            bash tools/refresh_state.sh || true
+
+            python run_signal.py
+            rc=$?
+            if [ "$rc" -gt "$worst" ]; then worst=$rc; fi
+
+            # Heartbeat harian menumpang di loop ini; run_heartbeat.py sendiri
+            # yang memutuskan apakah hari ini sudah terkirim.
+            python run_heartbeat.py || echo "[watch] heartbeat gagal, diabaikan"
+
+            if ! bash tools/save_state.sh "state: $(date -u +%Y-%m-%dT%H:%MZ)"; then
+              echo "[watch] save_state gagal"
+              worst=1
+            fi
+            echo "::endgroup::"
+
+            if [ "${MODE}" = "once" ]; then break; fi
+
+            now=$(date +%s)
+            next_close=$(( (now / 14400 + 1) * 14400 + AFTER_CLOSE ))
+            wait=$(( next_close - now ))
+            if [ "$wait" -gt "$INTERVAL" ]; then wait=$INTERVAL; fi
+            if [ "$wait" -lt 5 ]; then wait=5; fi
+            if [ $(( now + wait )) -ge "$DEADLINE" ]; then
+              echo "[watch] anggaran waktu habis; cron berikutnya menyalakan ulang"
+              break
+            fi
+            sleep "$wait"
+          done
+
+          echo "[watch] selesai setelah ${n} kali cek (exit ${worst})"
+          # Non-nol kalau ada pesan tersangkut di outbox, supaya GitHub mengirim
+          # email. Pesannya tetap dicoba ulang tiap cek.
+          exit "$worst"

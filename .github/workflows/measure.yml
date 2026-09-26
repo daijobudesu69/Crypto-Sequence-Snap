@@ -1,0 +1,52 @@
+name: Ukur spot vs perp
+
+# Dijalankan manual SEKALI sebelum forward test dimulai (dan boleh diulang).
+# Mengukur berapa sinyal V2 yang berbeda karena bot memakai data spot, bukan
+# perp seperti backtest -- terutama BNB dan AVAX yang belum pernah diukur --
+# sekaligus mereplikasi contoh Report Bagian 3. Hasil: docs/SPOT_VS_PERP.md.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snap-measure
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Ukur
+        id: ukur
+        run: python tools/measure_spot_vs_perp.py
+        continue-on-error: true
+
+      - name: Simpan hasil
+        run: |
+          git config user.name  "snap-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/SPOT_VS_PERP.md
+          if git diff --cached --quiet; then echo "tidak ada hasil baru"; exit 0; fi
+          git commit -q -m "docs: ukur spot vs perp $(date -u +%Y-%m-%d) [skip ci]"
+          for i in 1 2 3 4 5; do
+            git pull -q --rebase origin "${GITHUB_REF_NAME}" && \
+              git push -q origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((i * 3))
+          done
+          exit 1
+
+      - name: Replikasi harus cocok
+        if: steps.ukur.outcome != 'success'
+        run: |
+          echo "::error::Replikasi Report Bagian 3 TIDAK cocok atau pengukuran gagal -- lihat log langkah Ukur"
+          exit 1
