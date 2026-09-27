@@ -16,6 +16,7 @@ lilin 4H tutup, mengeksekusi di atas kertas, mengirim sinyal ke Telegram
 > Semua bukti: [`docs/Sequence Snap Report Trading Strategy.md`](docs/Sequence%20Snap%20Report%20Trading%20Strategy.md)
 > · jejak keputusan riset: [`docs/PROJECT_LOG_Sequence-Snap.md`](docs/PROJECT_LOG_Sequence-Snap.md)
 > · setup forward test: [`docs/FORWARD_TEST_V2_SETUP.md`](docs/FORWARD_TEST_V2_SETUP.md)
+> · **laporan lengkap project ini: [`docs/LAPORAN_PROJECT_FORWARD_TEST.md`](docs/LAPORAN_PROJECT_FORWARD_TEST.md)**
 
 ---
 
@@ -140,7 +141,7 @@ terbentuk penuh: sisa pengaruh nilai awal EMA di 1.500 bar ~0,00003%.
 | Pesan | Kapan |
 |---|---|
 | 🟢 **SEQUENCE SNAP v2 — LONG** | Sinyal terbentuk. Close, stop, target, qty untuk $300, RSI, jarak ke EMA200 |
-| 📌 **ENTRY TERCATAT (paper)** | Lilin berikutnya buka — harga entry referensi |
+| 📌 **ENTRY TERCATAT (paper)** | Saat lilin entry tutup (±4 jam setelah sinyal) — catatan, bukan instruksi |
 | ✅ / 🛑 **EXIT** | Target / stop kena. R bersih, $ paper, total, kalah beruntun |
 | 💓 **hidup** | 1× sehari 07:00 WIB. Posisi, progres x/100 trade, drawdown |
 | 🚨 **ATURAN BERHENTI TERPICU** | Di EXIT/heartbeat kalau salah satu aturan §6 setup tercapai |
@@ -163,7 +164,7 @@ terbentuk penuh: sisa pengaruh nilai awal EMA di 1.500 bar ~0,00003%.
 | `pine/SequenceSnap_v2.pine` | Script TradingView untuk verifikasi visual |
 | `tools/measure_spot_vs_perp.py` | Pilih sumber per koin + replikasi Report |
 | `tests/` | Parity dengan kode riset, 8 syarat, mesin posisi, pipa kirim |
-| `docs/` | Report, project log, setup V2, arsip setup V1 |
+| `docs/` | Laporan project, Report, project log, setup V2, pengukuran sumber data, arsip setup V1 |
 
 ```bash
 pip install -r requirements.txt
