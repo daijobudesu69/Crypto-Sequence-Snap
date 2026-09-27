@@ -1,23 +1,28 @@
-"""Ukur tracking error: sinyal V2 di data SPOT (yang dipakai bot) vs PERP (backtest).
+"""Pilih sumber data per koin: mana yang paling dekat dengan Binance FUTURES.
 
-Bot tidak bisa membaca API perp Binance dari runner GitHub (HTTP 451), jadi ia
-memakai mirror spot. Pertanyaannya: berapa sinyal yang berbeda karena itu? MEX
-mengukur 94-97% untuk ETH/XRP/DOGE dengan aturan MEX; untuk Sequence Snap, dan
-untuk BNB dan AVAX sama sekali, belum pernah diukur. Skrip ini mengukurnya.
+Bot tidak bisa membaca API futures Binance dari runner GitHub (HTTP 451). Dua
+pengganti yang bisa dijangkau:
 
-Juga dua cek replikasi terhadap Report, supaya mesin di repo ini terbukti sama
-dengan mesin riset SEBELUM forward test dimulai:
+  spot  -- data-api.binance.vision, Binance SPOT (bursa sama, pasar beda)
+  gate  -- api.gateio.ws, Gate.io PERP (pasar sama jenisnya, bursa beda)
 
-  1. Report Bagian 3: sinyal ETHUSDT 9 Sep 2024 08:00 UTC (Versi 1), RSI 48,52
-     vs 48,33, stop 2238,88, target 2426,93.
-  2. Jumlah trade Versi 1 per koin 2024-01..2026-08 vs tabel MIN_NOTIONAL di
-     setup V1 (43/42/39/37/25 trade s/d 19 Sep 2026 -- jadi angka di sini boleh
-     sedikit lebih kecil karena September 2026 tidak ikut).
+Keduanya diadu dengan arsip resmi Binance USD-M perp (data.binance.vision),
+bar demi bar, per koin. "Real-time" dalam arti harfiah tidak bisa diukur dari
+runner -- justru karena futures Binance yang diblokir -- jadi kedekatan
+terkini diukur di 90 hari terakhir arsip.
 
-Sumber: arsip bulanan resmi data.binance.vision (futures/um dan spot), 4H.
+ATURAN PILIH (ditetapkan sebelum hasil dilihat):
+  1. Sumber dengan kecocokan SINYAL tertinggi, diukur sebagai
+     cocok / (sinyal perp + sinyal palsu). Yang diperdagangkan adalah sinyal,
+     bukan harga; di MEX, Gate punya harga lebih dekat tapi sinyal lebih jauh.
+  2. Seri (beda < 1 poin persen) -> beda harga close 90 hari terakhir terkecil.
+  3. Sumber yang tidak punya data koin itu (mis. XMR di spot) gugur.
+
+Juga dua cek replikasi terhadap Report (mesin repo ini = mesin riset):
+  - Report Bagian 3: sinyal ETHUSDT 9 Sep 2024 08:00 UTC (Versi 1)
+  - jumlah trade Versi 1 per koin watchlist awal vs setup V1
+
 Keluaran: docs/SPOT_VS_PERP.md dan ringkasan di stdout.
-
-Dijalankan lewat workflow "Ukur spot vs perp" (manual). Butuh ~2-5 menit.
 """
 import io
 import os
@@ -33,16 +38,25 @@ import pandas as pd  # noqa: E402
 import requests  # noqa: E402
 
 from snap.config import load  # noqa: E402
-from snap.datafeed import SYMBOLS  # noqa: E402
+from snap.datafeed import BAR, GATE, gate_history  # noqa: E402
 from snap.strategy import compute_features, step, trade_result  # noqa: E402
 
 BASE = "https://data.binance.vision/data"
 START, END = "2024-01", "2026-08"
-EVAL_FROM = pd.Timestamp("2024-07-01", tz="UTC")   # 6 bulan pemanasan EMA200
+EVAL_FROM = pd.Timestamp("2024-07-01", tz="UTC")
+WARMUP_BARS = 1000                 # EMA200: sisa pengaruh nilai awal ~0,005%
+RECENT = pd.Timedelta("90D")
 CACHE = ".cache/klines"
 OUT = "docs/SPOT_VS_PERP.md"
 
+COINS = ["ETHUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "AVAXUSDT",
+         "TRXUSDT", "XMRUSDT", "NEARUSDT", "TAOUSDT"]
+V1_REF = {"ETHUSDT": 43, "BNBUSDT": 42, "XRPUSDT": 39, "DOGEUSDT": 37, "AVAXUSDT": 25}
 
+
+# --------------------------------------------------------------------------- #
+# data
+# --------------------------------------------------------------------------- #
 def _months():
     return [p.strftime("%Y-%m") for p in pd.period_range(START, END, freq="M")]
 
@@ -74,20 +88,33 @@ def _download(market: str, sym: str, month: str) -> pd.DataFrame | None:
                          "volume": df[5].values})
 
 
-def series(market: str, sym: str) -> pd.DataFrame:
+def binance(market: str, sym: str) -> pd.DataFrame | None:
     frames = [d for m in _months() if (d := _download(market, sym, m)) is not None]
+    if not frames:
+        return None
     df = pd.concat(frames, ignore_index=True)
     return df.drop_duplicates("ts").sort_values("ts").reset_index(drop=True)
 
 
-def simulate(df: pd.DataFrame, cfg_params, paper: dict):
-    """Jalankan mesin forward test yang SAMA di seluruh sejarah. (sinyal, trade)."""
-    f = compute_features(df, cfg_params)
+def gate(sym: str) -> tuple[pd.DataFrame | None, str]:
+    end = pd.Period(END, freq="M").end_time.tz_localize("UTC").floor("4h")
+    try:
+        return gate_history(GATE[sym], pd.Timestamp(f"{START}-01", tz="UTC"), end), ""
+    except Exception as e:  # noqa: BLE001
+        return None, str(e)[:120]
+
+
+# --------------------------------------------------------------------------- #
+# mesin
+# --------------------------------------------------------------------------- #
+def simulate(df: pd.DataFrame, params, paper: dict):
+    """Mesin forward test yang SAMA, di seluruh sejarah. -> (f, ts, sinyal, trade)."""
+    f = compute_features(df, params)
     ts = pd.DatetimeIndex(df["ts"])
     pos = pending = None
     signals, trades = [], []
     for i in range(len(df)):
-        pos, pending, events = step(f, ts, i, cfg_params, pos, pending,
+        pos, pending, events = step(f, ts, i, params, pos, pending,
                                     paper["capital_usd"], paper["risk_pct"])
         for ev in events:
             if ev["event"] == "SIGNAL":
@@ -98,87 +125,150 @@ def simulate(df: pd.DataFrame, cfg_params, paper: dict):
     return f, ts, signals, trades
 
 
+def compare(perp: pd.DataFrame, alt: pd.DataFrame, v2, paper, eval_from) -> dict:
+    """Satu sumber alternatif vs perp Binance: harga dan sinyal, di bar yang sama."""
+    m = perp.merge(alt, on="ts", suffixes=("_p", "_a"))
+    m = m[m["ts"] >= eval_from]
+    rec = m[m["ts"] >= m["ts"].max() - RECENT]
+
+    def err(frame, col):
+        return float((frame[f"{col}_a"] / frame[f"{col}_p"] - 1).abs().median() * 100)
+
+    # Sinyal dihitung di seri masing-masing (EMA dan RSI butuh riwayat sendiri),
+    # lalu dibandingkan hanya di rentang yang dimiliki keduanya.
+    lo, hi = max(eval_from, alt["ts"].min() + WARMUP_BARS * BAR), perp["ts"].max()
+    _, _, sp, _ = simulate(perp, v2, paper)
+    _, _, sa, ta = simulate(alt, v2, paper)
+    P = {t for t, _ in sp if lo <= t <= hi}
+    A = {t for t, _ in sa if lo <= t <= hi}
+    both = P & A
+    union = len(P) + len(A - P)
+    return {
+        "bars": len(m), "close_err": err(m, "close"), "hl_err": (err(m, "high") + err(m, "low")) / 2,
+        "close_err_90d": err(rec, "close") if len(rec) else float("nan"),
+        "perp": len(P), "alt": len(A), "match": len(both),
+        "missed": len(P - A), "false": len(A - P),
+        "agree": (len(both) / union * 100) if union else float("nan"),
+        "recall": (len(both) / len(P) * 100) if P else float("nan"),
+        "sumR": sum(r for t, r in ta if lo <= t <= hi),
+        "ntr": sum(1 for t, _ in ta if lo <= t <= hi),
+        "from": lo,
+    }
+
+
+def pick(res: dict) -> str:
+    """Aturan pilih di docstring modul. `res` = {nama_sumber: hasil compare | None}."""
+    ok = {k: v for k, v in res.items() if v and np.isfinite(v["agree"])}
+    if not ok:
+        return "-"
+    best = max(ok.values(), key=lambda v: v["agree"])["agree"]
+    tied = {k: v for k, v in ok.items() if best - v["agree"] < 1.0}
+    return min(tied, key=lambda k: (tied[k]["close_err_90d"]
+                                    if np.isfinite(tied[k]["close_err_90d"]) else 9e9))
+
+
+# --------------------------------------------------------------------------- #
 def main() -> int:
     cfg = load()
     v2, paper = cfg["params"], cfg["paper"]
     v1 = replace(v2, use_trend_filter=False)
-    lines = ["# Spot vs perp — tracking error sinyal Sequence Snap", "",
-             f"Diukur {pd.Timestamp.now(tz='UTC'):%Y-%m-%d %H:%M} UTC oleh "
-             "`tools/measure_spot_vs_perp.py`. Arsip bulanan resmi "
-             f"data.binance.vision, {START} .. {END}, dievaluasi sejak "
-             f"{EVAL_FROM:%Y-%m-%d} (sebelumnya pemanasan EMA200).", ""]
+    L = ["# Sumber data per koin — kedekatan dengan Binance futures", "",
+         f"Diukur {pd.Timestamp.now(tz='UTC'):%Y-%m-%d %H:%M} UTC oleh "
+         "`tools/measure_spot_vs_perp.py`. Acuan: arsip resmi Binance USD-M perp "
+         f"(data.binance.vision), {START} .. {END}. Sinyal dibandingkan sejak "
+         f"{EVAL_FROM:%Y-%m-%d} atau {WARMUP_BARS} bar setelah data sumber mulai "
+         "(pemanasan EMA200), mana yang lebih akhir.", ""]
 
     # ── 1. Replikasi Report Bagian 3 ───────────────────────────────────────
-    eth = series("perp", "ETHUSDT")
+    eth = binance("perp", "ETHUSDT")
     f1, ts1, sig1, _ = simulate(eth, v1, paper)
     target_bar = pd.Timestamp("2024-09-09 08:00", tz="UTC")
     hit = [p for t, p in sig1 if t == target_bar]
     i = int(ts1.get_loc(target_bar))
-    rep_ok = bool(hit) and abs(hit[0]["stop"] - 2238.88) < 1e-6 \
-        and abs(hit[0]["target"] - 2426.93) < 0.01 \
-        and abs(f1["rsi"][i] - 48.52) < 0.01 and abs(f1["rsi_prev"][i] - 48.33) < 0.01
-    lines += ["## 1. Replikasi contoh Report Bagian 3 (ETHUSDT perp, Versi 1)", "",
-              "| | Report | Repo ini |", "|---|---:|---:|",
-              f"| Sinyal 2024-09-09 08:00 UTC | ada | {'ada' if hit else '**TIDAK ADA**'} |",
-              f"| RSI bar 0 | 48,52 | {f1['rsi'][i]:.2f} |",
-              f"| RSI bar 1 | 48,33 | {f1['rsi_prev'][i]:.2f} |",
-              f"| Stop | 2238,88 | {hit[0]['stop'] if hit else float('nan'):.2f} |",
-              f"| Target | 2426,93 | {hit[0]['target'] if hit else float('nan'):.2f} |",
-              f"| close vs EMA200 | — | {f1['close'][i] / f1['ma'][i] * 100 - 100:+.2f}% "
-              f"({'lolos' if f1['close'][i] > f1['ma'][i] else 'DIBLOKIR'} filter V2) |",
-              "", f"**Hasil: {'COCOK' if rep_ok else 'TIDAK COCOK — jangan mulai forward test'}**",
-              ""]
+    rep_ok = (bool(hit) and abs(hit[0]["stop"] - 2238.88) < 1e-6
+              and abs(hit[0]["target"] - 2426.93) < 0.01
+              and abs(f1["rsi"][i] - 48.52) < 0.01 and abs(f1["rsi_prev"][i] - 48.33) < 0.01)
+    L += ["## 1. Replikasi contoh Report Bagian 3 (ETHUSDT perp, Versi 1)", "",
+          "| | Report | Repo ini |", "|---|---:|---:|",
+          f"| Sinyal 2024-09-09 08:00 UTC | ada | {'ada' if hit else '**TIDAK ADA**'} |",
+          f"| RSI bar 0 / bar 1 | 48,52 / 48,33 | {f1['rsi'][i]:.2f} / {f1['rsi_prev'][i]:.2f} |",
+          f"| Stop / target | 2238,88 / 2426,93 | "
+          f"{hit[0]['stop'] if hit else float('nan'):.2f} / "
+          f"{hit[0]['target'] if hit else float('nan'):.2f} |",
+          "", f"**Hasil: {'COCOK' if rep_ok else 'TIDAK COCOK — jangan mulai forward test'}**", ""]
 
-    # ── 2. Per simbol ──────────────────────────────────────────────────────
-    rows = []
-    v1_rows = []
-    for sym in SYMBOLS:
+    # ── 2. Per koin, per sumber ────────────────────────────────────────────
+    rows, picks, v2stats, v1rows, notes = [], {}, [], [], []
+    for sym in COINS:
         print(f"[measure] {sym} ...", flush=True)
-        perp, spot = series("perp", sym), series("spot", sym)
-        common = perp["ts"][perp["ts"].isin(spot["ts"])]
-        _, _, sp, tp = simulate(perp, v2, paper)
-        _, _, ss, tsp = simulate(spot, v2, paper)
-        P = {t for t, _ in sp if t >= EVAL_FROM}
-        S = {t for t, _ in ss if t >= EVAL_FROM}
-        both = P & S
-        m = perp.merge(spot, on="ts", suffixes=("_p", "_s"))
-        close_err = (m["close_s"] / m["close_p"] - 1).abs().median() * 100
-        rp = [r for t, r in tp if t >= EVAL_FROM]
-        rs = [r for t, r in tsp if t >= EVAL_FROM]
-        rows.append((sym, len(P), len(S), len(both), len(P - S), len(S - P),
-                     (len(both) / len(P) * 100) if P else float("nan"), close_err,
-                     len(rp), sum(rp), len(rs), sum(rs), len(common)))
-        _, _, _, t1 = simulate(perp, v1, paper)
-        v1_rows.append((sym, len(t1)))
+        perp = binance("perp", sym)
+        if perp is None:
+            notes.append(f"- **{sym}**: tidak ada arsip Binance futures — tidak bisa diukur.")
+            picks[sym] = "-"
+            continue
+        eval_from = max(EVAL_FROM, perp["ts"].min() + WARMUP_BARS * BAR)
+        spot = binance("spot", sym)
+        g, gerr = gate(sym)
+        res = {"binance_spot_mirror": compare(perp, spot, v2, paper, eval_from) if spot is not None else None,
+               "gate_io_perp": compare(perp, g, v2, paper, eval_from) if g is not None else None}
+        if spot is None:
+            notes.append(f"- **{sym}**: tidak ada data Binance spot (pasangan spot tidak/berhenti diperdagangkan).")
+        if g is None:
+            notes.append(f"- **{sym}**: Gate.io gagal — {gerr}")
+        picks[sym] = pick(res)
+        for name, r in res.items():
+            if r is None:
+                continue
+            rows.append((sym, name, r, picks[sym] == name))
+        _, _, _, tp = simulate(perp, v2, paper)
+        rs = [r for t, r in tp if t >= eval_from]
+        months = (perp["ts"].max() - eval_from).days / 30.44
+        v2stats.append((sym, len(rs), sum(rs), (sum(rs) / len(rs)) if rs else 0.0,
+                        (sum(1 for r in rs if r > 0) / len(rs) * 100) if rs else 0.0,
+                        len(rs) / months if months > 0 else 0.0, eval_from))
+        if sym in V1_REF:
+            _, _, _, t1 = simulate(perp, v1, paper)
+            v1rows.append((sym, len(t1)))
 
-    lines += ["## 2. Sinyal Versi 2: spot (bot) vs perp (backtest)", "",
-              "| Koin | Sinyal perp | Sinyal spot | Cocok | Hilang di spot | Palsu di spot "
-              "| Kecocokan | Beda close (median) | Trade perp | ΣR perp | Trade spot | ΣR spot |",
-              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
-    for r in rows:
-        lines.append(f"| {r[0]} | {r[1]} | {r[2]} | {r[3]} | {r[4]} | {r[5]} | "
-                     f"**{r[6]:.1f}%** | {r[7]:.3f}% | {r[8]} | {r[9]:+.2f} | "
-                     f"{r[10]} | {r[11]:+.2f} |")
-    tot_p = sum(r[1] for r in rows)
-    tot_b = sum(r[3] for r in rows)
-    lines += ["", f"**Gabungan: {tot_b}/{tot_p} sinyal perp muncul juga di spot "
-              f"({(tot_b / tot_p * 100) if tot_p else float('nan'):.1f}%).**", "",
-              "Kecocokan = sinyal perp yang juga muncul di spot. \"Palsu di spot\" = "
-              "sinyal yang hanya ada di spot, jadi tidak pernah ada di backtest. "
-              "ΣR = R bersih komisi dari mesin paper repo ini, tanpa funding.", ""]
+    L += ["## 2. Kedekatan tiap sumber dengan Binance futures", "",
+          "| Koin | Sumber | Beda close | Beda close 90 hr | Beda high/low | Sinyal perp | "
+          "Cocok | Hilang | Palsu | **Kecocokan** | Trade | ΣR (sumber ini) | Dipilih |",
+          "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|"]
+    for sym, name, r, chosen in rows:
+        short = "spot Binance" if name == "binance_spot_mirror" else "Gate perp"
+        L.append(f"| {sym} | {short} | {r['close_err']:.3f}% | {r['close_err_90d']:.3f}% | "
+                 f"{r['hl_err']:.3f}% | {r['perp']} | {r['match']} | {r['missed']} | {r['false']} | "
+                 f"**{r['agree']:.1f}%** | {r['ntr']} | {r['sumR']:+.2f} | {'✅' if chosen else ''} |")
+    L += ["", "Kecocokan = cocok ÷ (sinyal perp + sinyal palsu): sinyal yang hilang DAN "
+          "sinyal yang tidak pernah ada di backtest sama-sama dihitung sebagai meleset. "
+          "Beda = median selisih absolut per bar terhadap Binance futures.", ""]
+    if notes:
+        L += notes + [""]
+    L += ["### Pilihan", "", "```python",
+          "PRIMARY = {"] + [f'    "{s}": "{p}",' for s, p in picks.items()] + ["}", "```", ""]
 
-    lines += ["## 3. Cek jumlah trade Versi 1 vs setup V1 (perp, 2024-01..2026-08)", "",
-              "| Koin | Repo ini | Setup V1 (s/d 19 Sep 2026) |", "|---|---:|---:|"]
-    ref = {"ETHUSDT": 43, "BNBUSDT": 42, "XRPUSDT": 39, "DOGEUSDT": 37, "AVAXUSDT": 25}
-    for sym, n in v1_rows:
-        lines.append(f"| {sym} | {n} | {ref[sym]} |")
-    lines += ["", "Repo ini boleh sedikit di bawah angka setup (September 2026 tidak ikut). "
-              "Selisih besar berarti mesin repo ini tidak sama dengan mesin riset.", ""]
+    # ── 3. V2 di Binance futures, per koin ─────────────────────────────────
+    L += ["## 3. Versi 2 di Binance futures, per koin (acuan kasar, BUKAN validasi)", "",
+          "| Koin | Sejak | Trade | Trade/bulan | Win rate | Expectancy | ΣR |",
+          "|---|---|---:|---:|---:|---:|---:|"]
+    for sym, n, sr, ex, wr, pm, ef in v2stats:
+        L.append(f"| {sym} | {ef:%Y-%m-%d} | {n} | {pm:.2f} | {wr:.0f}% | {ex:+.3f} R | {sr:+.2f} |")
+    L += ["", "Periode ini tumpang tindih dengan periode yang dipakai membangun strategi "
+          "(2024–2026), jadi angkanya batas atas yang optimis. TRX, XMR, NEAR, TAO "
+          "ditambahkan setelah riset; angka mereka di sini **tidak boleh** dipakai "
+          "untuk memilih atau membuang koin — itu data snooping.", ""]
+
+    # ── 4. Jumlah trade V1 vs setup V1 ─────────────────────────────────────
+    L += ["## 4. Cek jumlah trade Versi 1 vs setup V1 (perp, 2024-01..2026-08)", "",
+          "| Koin | Repo ini | Setup V1 (s/d 19 Sep 2026) |", "|---|---:|---:|"]
+    for sym, n in v1rows:
+        L.append(f"| {sym} | {n} | {V1_REF[sym]} |")
+    L += ["", "Boleh sedikit di bawah angka setup (September 2026 tidak ikut).", ""]
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(lines) + "\n")
-    print("\n".join(lines))
+        fh.write("\n".join(L) + "\n")
+    print("\n".join(L))
     return 0 if rep_ok else 1
 
 

@@ -41,12 +41,19 @@ UA = {"User-Agent": "Crypto-Sequence-Snap-forward-test/1.0 "
 # benar-benar diunduh (pelajaran MEX: kunci `symbol` di config pernah hanya
 # mengganti label sementara datanya tetap ETH).
 SYMBOLS = ["ETHUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "AVAXUSDT"]
+# Kontrak Gate.io perp untuk tiap simbol yang pernah dipertimbangkan -- termasuk
+# kandidat yang belum masuk SYMBOLS, supaya tools/measure_spot_vs_perp.py bisa
+# mengukurnya dengan pemetaan yang sama persis dengan yang akan dipakai bot.
 GATE = {
     "ETHUSDT": "ETH_USDT",
     "BNBUSDT": "BNB_USDT",
     "XRPUSDT": "XRP_USDT",
     "DOGEUSDT": "DOGE_USDT",
     "AVAXUSDT": "AVAX_USDT",
+    "TRXUSDT": "TRX_USDT",
+    "XMRUSDT": "XMR_USDT",
+    "NEARUSDT": "NEAR_USDT",
+    "TAOUSDT": "TAO_USDT",
 }
 INTERVAL = "4h"
 BAR = pd.Timedelta(INTERVAL)
@@ -116,22 +123,40 @@ def _from_binance_spot(symbol, n=N_BARS):
     return out.drop_duplicates("ts").sort_values("ts").reset_index(drop=True)
 
 
-def _from_gate(contract, n=N_BARS):
-    """Rentang waktu eksplisit, supaya jumlah bar tidak bergantung pada batas `limit`."""
-    now = int(pd.Timestamp.now(tz="UTC").timestamp())
+GATE_PAGE = 1000   # bar per permintaan; Gate membatasi 2.000 titik per query
+
+
+def gate_history(contract, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    """Bar 4H Gate.io perp dalam [start, end], diambil per halaman 1.000 bar.
+
+    Gate menolak `limit` bila `from`/`to` diisi, jadi jumlah bar diatur lewat
+    rentang waktu. Halaman kosong (sebelum kontrak listing) dilewati.
+    """
     span = int(BAR.total_seconds())
-    raw = _get(GATE_FUTURES, {"contract": contract, "interval": INTERVAL,
-                              "from": now - n * span, "to": now})
-    if not raw:
+    t0, t1 = int(start.timestamp()), int(end.timestamp())
+    frames = []
+    while t0 <= t1:
+        hi = min(t0 + (GATE_PAGE - 1) * span, t1)
+        raw = _get(GATE_FUTURES, {"contract": contract, "interval": INTERVAL,
+                                  "from": t0, "to": hi})
+        if raw:
+            df = pd.DataFrame(raw)
+            frames.append(pd.DataFrame({
+                "ts": pd.to_datetime(df["t"].astype("int64"), unit="s", utc=True),
+                "open": df["o"].astype(float), "high": df["h"].astype(float),
+                "low": df["l"].astype(float), "close": df["c"].astype(float),
+                "volume": df["v"].astype(float),
+            }))
+        t0 = hi + span
+    if not frames:
         raise RuntimeError("gate.io tidak mengembalikan baris")
-    df = pd.DataFrame(raw)
-    out = pd.DataFrame({
-        "ts": pd.to_datetime(df["t"].astype("int64"), unit="s", utc=True),
-        "open": df["o"].astype(float), "high": df["h"].astype(float),
-        "low": df["l"].astype(float), "close": df["c"].astype(float),
-        "volume": df["v"].astype(float),
-    })
+    out = pd.concat(frames, ignore_index=True)
     return out.drop_duplicates("ts").sort_values("ts").reset_index(drop=True)
+
+
+def _from_gate(contract, n=N_BARS):
+    now = pd.Timestamp.now(tz="UTC")
+    return gate_history(contract, now - n * BAR, now)
 
 
 SOURCES = ["binance_spot_mirror", "gate_io_perp"]
