@@ -326,9 +326,12 @@ def test_sheets_setengah_terisi_memberi_petunjuk():
 def test_sheets_mencerminkan_ke_tab_yang_benar():
     SENT.clear()
     calls = []
-    saved = (sheets.configured, sheets.append, sheets.reachable)
+    saved = (sheets.configured, sheets.append, sheets.reachable, sheets.sync, sheets.replace)
     sheets.configured = lambda: True
     sheets.reachable = lambda: True
+    synced = []
+    sheets.sync = lambda tab, cols, rows: synced.append((tab, len(rows))) or 0
+    sheets.replace = lambda tab, values: synced.append((tab, len(values))) or True
     sheets.append = lambda tab, cols, row: calls.append((tab, row.get("event") or row.get("koin")
                                                          or row.get("status"))) or True
     ledger._PUSHES.clear()
@@ -341,16 +344,20 @@ def test_sheets_mencerminkan_ke_tab_yang_benar():
             assert tabs.count("events") == 3 and tabs.count("trades") == 1
             assert "runs" in tabs
             assert ledger.read_rows(ledger.RUNS)[-1]["sheet"] == "ok"
+            # trade selesai -> sinkron + ringkasan ditulis ulang di run yang sama
+            assert ("trades", 1) in synced and any(t == "ringkasan" for t, _ in synced)
     finally:
-        sheets.configured, sheets.append, sheets.reachable = saved
+        sheets.configured, sheets.append, sheets.reachable, sheets.sync, sheets.replace = saved
         ledger._PUSHES.clear()
 
 
 def test_sheets_mati_tidak_menghalangi_csv():
     SENT.clear()
-    saved = (sheets.configured, sheets.append, sheets.reachable)
+    saved = (sheets.configured, sheets.append, sheets.reachable, sheets.sync, sheets.replace)
     sheets.configured = lambda: True
     sheets.reachable = lambda: True
+    sheets.sync = lambda tab, cols, rows: None
+    sheets.replace = lambda tab, values: False
     sheets.append = lambda tab, cols, row: False
     ledger._PUSHES.clear()
     try:
@@ -361,8 +368,49 @@ def test_sheets_mati_tidak_menghalangi_csv():
             assert len(ledger.read_rows(ledger.TRADES)) == 1
             assert ledger.read_rows(ledger.RUNS)[-1]["sheet"] == "failed"
     finally:
-        sheets.configured, sheets.append, sheets.reachable = saved
+        sheets.configured, sheets.append, sheets.reachable, sheets.sync, sheets.replace = saved
         ledger._PUSHES.clear()
+
+
+def test_ringkasan_berisi_semua_yang_dibutuhkan():
+    from snap import report
+    SENT.clear()
+    with sandbox(n_bars=390) as s:
+        run_signal.main()
+        s["n"] = 420
+        run_signal.main()
+        cfg = load("config.yaml")
+        with open("state/position.json") as fh:
+            st = json.load(fh)
+        rows = report.summary_rows(cfg, st)
+        flat = {r[0]: r[1:] for r in rows if r and r[0]}
+        for key in ("trade selesai", "progres ke 100 trade", "expectancy (R/trade, bersih komisi)",
+                    "win rate (%)", "drawdown terdalam (%)", "kalah beruntun terpanjang",
+                    "ATURAN BERHENTI", "PER KOIN", "modal kertas (USD)"):
+            assert key in flat, key
+        assert flat["trade selesai"][0] == 1 and flat["progres ke 100 trade"][0] == "1/100"
+        assert flat["expectancy (R/trade, bersih komisi)"][1] == 0.1915   # acuan V3
+        assert all(sym in flat for sym in datafeed.SYMBOLS)
+        assert flat["ETHUSDT"][1] == 1                                     # 1 trade ETH
+        assert len({len(r) for r in rows}) == 1, "semua baris harus selebar sama"
+
+
+def test_riwayat_log_termasuk_arsip_setelah_header_berubah():
+    tmp = tempfile.mkdtemp()
+    old = os.getcwd()
+    os.chdir(tmp)
+    try:
+        os.makedirs("state")
+        with open(ledger.RUNS, "w", newline="") as fh:
+            fh.write("run_at_utc,status\n2026-01-01,ok\n2026-01-02,ok\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            ledger.log_run({"run_at_utc": "2026-01-03", "status": "ok", "sheet": "ok"})
+        assert os.path.exists("state/runs.v1.csv")
+        hist = ledger.read_history(ledger.RUNS)
+        assert [r["run_at_utc"] for r in hist] == ["2026-01-01", "2026-01-02", "2026-01-03"]
+    finally:
+        os.chdir(old)
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

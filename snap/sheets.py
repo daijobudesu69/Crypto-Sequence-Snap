@@ -161,3 +161,84 @@ def reachable() -> bool:
     except Exception as e:  # noqa: BLE001
         print(f"[sheets] probe gagal: {type(e).__name__}")
         return False
+
+
+# --------------------------------------------------------------------------- #
+# Tambahan Sequence Snap: baca balik, sinkron dari CSV, dan tab ringkasan.
+# --------------------------------------------------------------------------- #
+def read(tab: str) -> list[list[str]] | None:
+    """Seluruh isi tab (termasuk header), atau None kalau gagal. Tab yang belum
+    ada dikembalikan sebagai [] -- bukan error."""
+    if not configured():
+        return None
+    try:
+        s = _get_session()
+        r = s.get(f"{API}/{_spreadsheet_id()}/values/{tab}", timeout=30)
+        if r.status_code == 400:
+            return []                       # tab belum ada
+        if r.status_code >= 400:
+            print(f"[sheets] HTTP {r.status_code} saat membaca '{tab}'")
+            return None
+        return r.json().get("values") or []
+    except Exception as e:  # noqa: BLE001
+        print(f"[sheets] baca '{tab}' gagal: {type(e).__name__}")
+        return None
+
+
+def sync(tab: str, header: list[str], rows: list[dict]) -> int | None:
+    """Tambahkan baris CSV yang belum ada di tab. Mengembalikan jumlah baris yang
+    ditambahkan, atau None kalau gagal. Tidak pernah raise.
+
+    CSV adalah catatan resmi dan hanya bertambah di belakang, jadi "belum ada"
+    = baris CSV ke-(n+1) dan seterusnya, dengan n = jumlah baris data di tab.
+    Ini yang memulihkan baris yang dulu gagal dicerminkan (Sheets sempat mati).
+    """
+    if not configured():
+        return None
+    try:
+        s = _get_session()
+        cols = _header(s, tab, header)
+        have = read(tab)
+        if have is None:
+            return None
+        n = max(0, len(have) - 1)
+        todo = rows[n:]
+        if not todo:
+            return 0
+        values = [["" if r.get(k) is None else r.get(k, "") for k in cols] for r in todo]
+        r = s.post(f"{API}/{_spreadsheet_id()}/values/{tab}!A1:append"
+                   "?valueInputOption=RAW&insertDataOption=INSERT_ROWS",
+                   json={"values": values}, timeout=60)
+        if r.status_code >= 400:
+            print(f"[sheets] HTTP {r.status_code} saat sinkron '{tab}'")
+            return None
+        return len(todo)
+    except Exception as e:  # noqa: BLE001
+        print(f"[sheets] sinkron '{tab}' gagal: {type(e).__name__}")
+        return None
+
+
+def replace(tab: str, values: list[list]) -> bool:
+    """Timpa seluruh isi tab (dipakai untuk tab ringkasan). Tidak pernah raise."""
+    if not configured():
+        return False
+    try:
+        s = _get_session()
+        sid = _spreadsheet_id()
+        meta = s.get(f"{API}/{sid}?fields=sheets.properties.title", timeout=30)
+        meta.raise_for_status()
+        titles = [sh["properties"]["title"] for sh in meta.json().get("sheets", [])]
+        if tab not in titles:
+            s.post(f"{API}/{sid}:batchUpdate", timeout=30,
+                   json={"requests": [{"addSheet": {"properties": {"title": tab}}}]}
+                   ).raise_for_status()
+        s.post(f"{API}/{sid}/values/{tab}:clear", json={}, timeout=30).raise_for_status()
+        r = s.put(f"{API}/{sid}/values/{tab}!A1?valueInputOption=RAW", timeout=30,
+                  json={"values": [["" if v is None else v for v in row] for row in values]})
+        if r.status_code >= 400:
+            print(f"[sheets] HTTP {r.status_code} saat menulis '{tab}'")
+            return False
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"[sheets] tulis '{tab}' gagal: {type(e).__name__}")
+        return False

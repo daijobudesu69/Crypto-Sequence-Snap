@@ -27,7 +27,7 @@ import snap.compat  # noqa: F401,E402
 
 import pandas as pd  # noqa: E402
 
-from snap import datafeed, ledger, notify, sheets, state, stats  # noqa: E402
+from snap import datafeed, ledger, notify, report, sheets, state, stats  # noqa: E402
 from snap.config import ENGINE_VERSION, load  # noqa: E402
 from snap.strategy import (compute_features, pos_from_dict, pos_to_dict,  # noqa: E402
                            step, trade_result)
@@ -328,6 +328,7 @@ def main():
     before = _fingerprint(st)
 
     sent, failed, dropped = _flush(st)
+    trades_before = len(ledger.read_rows(ledger.TRADES))
 
     queued, seen, down = [], {}, []
     for sym in symbols:
@@ -346,6 +347,11 @@ def main():
     st.setdefault("outbox", []).extend(queued)
     s2, f2, d2 = _flush(st)
     sent, failed, dropped = sent + s2, f2, dropped + d2
+
+    # Trade baru selesai -> tab ringkasan di Sheets langsung diperbarui, tidak
+    # menunggu heartbeat besok pagi.
+    if len(ledger.read_rows(ledger.TRADES)) != trades_before and sheets.configured():
+        print(f"[sheets] {report.sync_all(cfg, st)}")
 
     st["engine_version"] = ENGINE_VERSION
     if _fingerprint(st) != before:

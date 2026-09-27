@@ -13,7 +13,7 @@ import snap.compat  # noqa: F401,E402
 
 import pandas as pd  # noqa: E402
 
-from snap import datafeed, ledger, notify, stats  # noqa: E402
+from snap import datafeed, ledger, notify, report, stats  # noqa: E402
 from snap.config import ENGINE_VERSION, load  # noqa: E402
 
 STATE = "state/position.json"
@@ -109,6 +109,12 @@ def main():
         ledger.write_json(STATE, st)
     else:
         print("[heartbeat] gagal terkirim; hari ini belum ditandai, akan dicoba lagi")
+
+    # Sinkron harian ke Sheets: mengisi baris yang dulu gagal dicerminkan dan
+    # menulis ulang tab ringkasan. Tidak pernah menggagalkan heartbeat.
+    res = report.sync_all(cfg, st)
+    if res.get("configured") is not False:
+        print(f"[heartbeat] sheets: {res}")
 
     ledger.log_run({
         "run_at_utc": s["now"], "status": "heartbeat" if not down else "heartbeat_data_error",

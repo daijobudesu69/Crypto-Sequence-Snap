@@ -131,6 +131,21 @@ def sheet_status() -> str:
     return "failed" if not any(_PUSHES) else f"partial_{sum(_PUSHES)}/{len(_PUSHES)}"
 
 
+def read_history(path) -> list[dict]:
+    """Seluruh riwayat sebuah log: arsip hasil _rotate() (x.v1.csv, x.v2.csv, ...)
+    lalu file aktif, berurutan. Dipakai untuk sinkron ke Sheets -- kalau hanya
+    file aktif yang dihitung, pergantian header membuat sinkron melewatkan
+    baris baru sampai jumlahnya menyusul baris lama."""
+    import glob
+    stem, ext = os.path.splitext(path)
+    arch = sorted(glob.glob(f"{stem}.v*{ext}"),
+                  key=lambda x: int(x[len(stem) + 2:-len(ext)] or 0))
+    out = []
+    for pth in arch + [path]:
+        out += read_rows(pth)
+    return out
+
+
 def log_event(row):
     _append(EVENTS, EVENT_COLS, row)
     _mirror("events", EVENT_COLS, row)

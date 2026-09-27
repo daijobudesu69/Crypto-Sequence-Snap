@@ -1,7 +1,9 @@
 name: Kirim pesan tes
 
-# Manual saja. Mengirim satu sinyal CONTOH bertanda TES ke Telegram, untuk
-# memastikan TELEGRAM_BOT_TOKEN dan TELEGRAM_CHAT_ID sudah benar.
+# Manual saja. Dua pemeriksaan ujung ke ujung, masing-masing dilaporkan terpisah:
+#   1. Telegram -- kirim satu sinyal CONTOH bertanda TES
+#   2. Google Sheets -- sinkron dari CSV, tulis ringkasan, lalu BACA BALIK dan
+#      pastikan semua kolom wajib forward test ada (tools/sheets_check.py)
 on:
   workflow_dispatch:
 
@@ -9,6 +11,11 @@ jobs:
   test-message:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GSHEET_SPREADSHEET_ID: ${{ secrets.GSHEET_SPREADSHEET_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -16,8 +23,19 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Kirim
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Telegram
+        id: telegram
+        continue-on-error: true
         run: python tools/send_test.py
+
+      - name: Google Sheets
+        id: sheets
+        continue-on-error: true
+        run: python tools/sheets_check.py
+
+      - name: Hasil
+        run: |
+          echo "Telegram      : ${{ steps.telegram.outcome }}"
+          echo "Google Sheets : ${{ steps.sheets.outcome }}"
+          test "${{ steps.telegram.outcome }}" = "success" -a "${{ steps.sheets.outcome }}" = "success"
