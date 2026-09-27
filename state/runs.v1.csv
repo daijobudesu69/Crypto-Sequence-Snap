@@ -1,0 +1,12 @@
+run_at_utc,status,data_source,last_bar_utc,bars_processed,events_emitted,open_positions,telegram,engine_version,run_id,commit_sha,message
+2026-09-26T19:45:13.031799+00:00,ok,binance_spot_mirror,2026-09-26T12:00:00+00:00,0,0,,nothing_to_send,snap-v2-fwd-1.0.0,36267114688,443e3155,
+2026-09-26T19:45:27.824714+00:00,heartbeat,binance_spot_mirror,2026-09-26T12:00:00+00:00,,,,not_configured,snap-v2-fwd-1.0.0,36267114688,443e3155,
+2026-09-26T20:00:46.267387+00:00,ok,binance_spot_mirror,2026-09-26T16:00:00+00:00,5,0,,nothing_to_send,snap-v2-fwd-1.0.0,36267114688,443e3155,
+2026-09-26T21:01:40.999432+00:00,ok,binance_spot_mirror,2026-09-26T16:00:00+00:00,0,0,,nothing_to_send,snap-v2-fwd-1.0.0,36267114688,443e3155,
+2026-09-26T22:02:35.313752+00:00,ok,binance_spot_mirror,2026-09-26T16:00:00+00:00,0,0,,nothing_to_send,snap-v2-fwd-1.0.0,36267114688,443e3155,
+2026-09-26T23:03:29.873171+00:00,ok,binance_spot_mirror,2026-09-26T16:00:00+00:00,0,0,,nothing_to_send,snap-v2-fwd-1.0.0,36267114688,443e3155,
+2026-09-27T00:00:46.445007+00:00,ok,binance_spot_mirror,2026-09-26T20:00:00+00:00,5,0,,nothing_to_send,snap-v2-fwd-1.0.0,36267114688,443e3155,
+2026-09-27T00:01:01.239785+00:00,heartbeat,binance_spot_mirror,2026-09-26T20:00:00+00:00,,,,not_configured,snap-v2-fwd-1.0.0,36267114688,443e3155,
+2026-09-27T01:01:47.833921+00:00,ok,binance_spot_mirror,2026-09-26T20:00:00+00:00,0,0,,nothing_to_send,snap-v2-fwd-1.0.0,36267114688,443e3155,
+2026-09-27T02:03:24.939697+00:00,ok,"binance_spot_mirror,gate_io_perp",2026-09-26T20:00:00+00:00,0,0,,nothing_to_send,snap-v2-fwd-1.1.0,36283788712,a52bef75,
+2026-09-27T03:04:53.353093+00:00,ok,"binance_spot_mirror,gate_io_perp",2026-09-26T20:00:00+00:00,0,0,,nothing_to_send,snap-v2-fwd-1.2.0,36283788712,a52bef75,
