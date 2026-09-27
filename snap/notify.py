@@ -133,24 +133,31 @@ def signal_message(p: dict, symbol: str, source: str, delay_min: float,
     base = symbol.replace("USDT", "")
     late = (f"\n\n⚠️ <b>Terkirim {delay_min:.0f} menit setelah lilin tutup</b> — "
             "harga sudah bergerak dari open. Bot tetap mencatat entry di harga "
-            "OPEN; kalau Anda ikut manual, catat harga fill Anda sendiri."
+            "OPEN; kalau Anda ikut manual, cek dulu harga masih di antara stop dan target."
             if delay_min and delay_min > 15 else "")
     rsi0, rsi1 = ctx.get("rsi_bar0"), ctx.get("rsi_bar1")
-    return f"""🟢 <b>SEQUENCE SNAP v2 — LONG</b>
-{symbol} · 4H · lilin sinyal tutup {wib(_plus4h(p['signal_bar']))}
+    entry_open = _plus4h(p["signal_bar"])             # lilin entry buka = lilin sinyal tutup
+    valid_until = _plus4h(entry_open)                 # = SIGNAL_TTL di run_signal.py
+    return f"""🟢 <b>SEQUENCE SNAP v2 — LONG · {symbol}</b>
+Timeframe 4H · lilin sinyal {candle(p['signal_bar'])} sudah tutup
 
-🎯 <b>Entry: market di OPEN lilin berikutnya</b>
-close lilin sinyal: {f(close0)}
+🎯 <b>ENTRY: SEKARANG, market order</b>
+Lilin 4H berikutnya buka {wib(entry_open)} — saat pesan ini dibuat.
+Harga acuan: <b>{f(close0)}</b> (close lilin sinyal ≈ open lilin berikutnya)
+Bukan range: bot mencatat entry di harga OPEN lilin {wib(entry_open)[11:]} persis.
+Masuk manual & harga sudah bergeser? Tetap market order, catat fill Anda.
+<b>Lewati</b> kalau harga sudah ≤ stop atau ≥ target, atau kalau pesan ini
+baru terbaca setelah {wib(valid_until)}.
 
-🛑 <b>Stop: {f(stop)}</b> ({_pct(stop, close0):+.2f}%, low lilin merah)
-✅ <b>Target: {f(tgt)}</b> ({_pct(tgt, close0):+.2f}%, 1.5R)
-Stop &amp; target dihitung dari CLOSE lilin sinyal. Tidak ada trailing, tidak ada batas waktu.
+🛑 <b>Stop: {f(stop)}</b> ({_pct(stop, close0):+.2f}% dari acuan, low lilin merah)
+✅ <b>Target: {f(tgt)}</b> ({_pct(tgt, close0):+.2f}% dari acuan, 1.5R)
+Dua angka ini MATI: tidak ikut harga entry Anda, tidak ada trailing, posisi ditahan sampai salah satunya kena.
 
 📐 <b>Ukuran posisi</b> (paper ${f(paper['capital_usd'], 0)}, risiko {f(paper['risk_pct'], 1)}% = ${f(risk_usd, 2)})
-qty = {f(risk_usd, 2)} ÷ (harga entry − {f(stop)})
-≈ {f(qty)} {base} · notional ≈ ${f(qty * close0, 2)}
+di harga acuan: <b>{f(qty)} {base}</b> · notional ${f(qty * close0, 2)}
+harga entry beda? qty = {f(risk_usd, 2)} ÷ (harga entry − {f(stop)})
 
-📊 RSI {f(rsi0, 1)} (bar sebelumnya {f(rsi1, 1)}) · close {f(ctx.get('close_vs_ema200_pct'), 2)}% di atas EMA200 ({f(ctx.get('ema200_bar0'))})
+📊 RSI {f(rsi0, 1)} (lilin sebelumnya {f(rsi1, 1)}) · close {f(ctx.get('close_vs_ema200_pct'), 2)}% di atas EMA200 ({f(ctx.get('ema200_bar0'))})
 <i>sumber: {esc(source)} · id: {p['signal_id']}</i>{late}"""
 
 
