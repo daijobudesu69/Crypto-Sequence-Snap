@@ -19,7 +19,7 @@ import pandas as pd
 
 import run_heartbeat
 import run_signal
-from snap import datafeed, ledger, notify, stats
+from snap import datafeed, ledger, notify, sheets, stats
 from snap.config import load
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import merge_state  # noqa: E402
@@ -306,6 +306,63 @@ def test_sanity_check_menolak_bolong_dan_basi():
         raise AssertionError("feed basi harus ditolak")
     except RuntimeError:
         pass
+
+
+def test_sheets_setengah_terisi_memberi_petunjuk():
+    keep = {k: os.environ.pop(k, None) for k in ("GOOGLE_SERVICE_ACCOUNT_JSON", "GSHEET_SPREADSHEET_ID")}
+    try:
+        os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = json.dumps({"client_email": "bot@x.iam.gserviceaccount.com"})
+        assert not sheets.configured()
+        hint = sheets.missing()
+        assert "GSHEET_SPREADSHEET_ID" in hint and "bot@x.iam.gserviceaccount.com" in hint
+        assert ledger.sheet_status() == "incomplete"
+    finally:
+        for k, v in keep.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+
+
+def test_sheets_mencerminkan_ke_tab_yang_benar():
+    SENT.clear()
+    calls = []
+    saved = (sheets.configured, sheets.append, sheets.reachable)
+    sheets.configured = lambda: True
+    sheets.reachable = lambda: True
+    sheets.append = lambda tab, cols, row: calls.append((tab, row.get("event") or row.get("koin")
+                                                         or row.get("status"))) or True
+    ledger._PUSHES.clear()
+    try:
+        with sandbox(n_bars=390) as s:
+            run_signal.main()
+            s["n"] = 420
+            run_signal.main()
+            tabs = [t for t, _ in calls]
+            assert tabs.count("events") == 3 and tabs.count("trades") == 1
+            assert "runs" in tabs
+            assert ledger.read_rows(ledger.RUNS)[-1]["sheet"] == "ok"
+    finally:
+        sheets.configured, sheets.append, sheets.reachable = saved
+        ledger._PUSHES.clear()
+
+
+def test_sheets_mati_tidak_menghalangi_csv():
+    SENT.clear()
+    saved = (sheets.configured, sheets.append, sheets.reachable)
+    sheets.configured = lambda: True
+    sheets.reachable = lambda: True
+    sheets.append = lambda tab, cols, row: False
+    ledger._PUSHES.clear()
+    try:
+        with sandbox(n_bars=390) as s:
+            run_signal.main()
+            s["n"] = 420
+            assert run_signal.main() == 0
+            assert len(ledger.read_rows(ledger.TRADES)) == 1
+            assert ledger.read_rows(ledger.RUNS)[-1]["sheet"] == "failed"
+    finally:
+        sheets.configured, sheets.append, sheets.reachable = saved
+        ledger._PUSHES.clear()
 
 
 if __name__ == "__main__":

@@ -5,6 +5,18 @@ pencatatan dicatat di sini **dengan tanggal dan alasan** — forward test hanya
 bisa dibaca kalau setiap baris log bisa dicocokkan dengan aturan yang berlaku
 saat itu (`engine_version` di tiap baris).
 
+## snap-v2-fwd-1.3.0 — 2026-09-27
+
+Belum ada trade.
+
+- **Template sinyal Telegram ditetapkan Dew** (ringkas: entry, harga acuan,
+  stop, target, ukuran posisi). Baris peringatan hanya muncul bila pesan
+  terlambat > 15 menit atau tertahan di antrean > 10 menit.
+- **Cermin Google Sheets** lewat service account (disalin dari MEX): tiap baris
+  events/trades/runs juga ditulis ke tab bernama sama. Gagal ke Sheets tidak
+  pernah menghalangi CSV. `runs.csv` mendapat kolom `sheet` (status cermin
+  per run) — header berubah, jadi log lama diarsipkan ke `runs.v1.csv`.
+
 ## snap-v2-fwd-1.2.0 — 2026-09-27
 
 Belum ada trade.

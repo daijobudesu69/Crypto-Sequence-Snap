@@ -116,15 +116,22 @@ terbentuk penuh: sisa pengaruh nilai awal EMA di 1.500 bar ~0,00003%.
 2. **Pemantau sinyal jalan otomatis** lewat cron begitu repo ini ada di GitHub.
    Run pertama tiap koin **bootstrap flat**: mengambil lilin terbaru dan mulai
    dari sana, tanpa memutar ulang sejarah.
-3. **Telegram (menyusul).** Settings → Secrets and variables → Actions → New
-   repository secret:
-   - `TELEGRAM_BOT_TOKEN` — dari @BotFather
-   - `TELEGRAM_CHAT_ID` — id chat Anda
+3. **Secrets** — Settings → Secrets and variables → Actions → New repository secret:
 
-   Lalu jalankan workflow **"Kirim pesan tes"**. Selama secret kosong, pesan
-   dicetak ke log job dan forward test tetap tercatat di CSV.
-4. **Google Sheets (menyusul).** Belum ada di repo ini. CSV di `state/` adalah
-   catatan resmi.
+   | Secret | Isi | Wajib untuk |
+   |---|---|---|
+   | `TELEGRAM_BOT_TOKEN` | token dari @BotFather | Telegram |
+   | `TELEGRAM_CHAT_ID` | id chat tujuan (angka; grup diawali `-`) | Telegram |
+   | `GOOGLE_SERVICE_ACCOUNT_JSON` | isi file kunci JSON service account | Google Sheets |
+   | `GSHEET_SPREADSHEET_ID` | ID dari URL spreadsheet (antara `/d/` dan `/edit`) | Google Sheets |
+
+   Telegram butuh **dua-duanya**; Sheets juga. Spreadsheet harus **dibagikan
+   ke email service account** (`client_email` di file JSON) dengan akses
+   **Editor**. Bot membuat tab `events`, `trades`, `runs` sendiri.
+
+   Setelah diisi, jalankan workflow **"Kirim pesan tes"**. Selama belum
+   lengkap, pesan dicetak ke log job, dan CSV di `state/` tetap mencatat
+   semuanya — CSV adalah catatan resmi, Sheets hanya cermin.
 
 ---
 
@@ -148,6 +155,7 @@ terbentuk penuh: sisa pengaruh nilai awal EMA di 1.500 bar ~0,00003%.
 | `snap/datafeed.py` | Data 4H, watchlist + sumber per koin (dikunci di sini) |
 | `snap/notify.py` | Template dan pengiriman Telegram |
 | `snap/stats.py` | Ringkasan + pemeriksaan aturan berhenti |
+| `snap/sheets.py` | Cermin ke Google Sheets (service account) |
 | `run_signal.py` / `run_heartbeat.py` | Driver yang dipanggil workflow |
 | `config.yaml` | Parameter terkunci + modal kertas |
 | `state/` | **Bukti forward test**: `trades.csv`, `events.csv`, `runs.csv`, `position.json` |

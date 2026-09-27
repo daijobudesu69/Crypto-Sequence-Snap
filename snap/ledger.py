@@ -8,13 +8,16 @@
                       hasil bot dan catatan manual bisa diadu kolom per kolom.
   state/runs.csv   -- satu baris per run: bukti hidup, latensi, sumber data.
 
-Diadaptasi dari Crypto-MEX (mex/ledger.py). Mirror Google Sheets belum ada --
-menyusul setelah repo jalan.
+Diadaptasi dari Crypto-MEX (mex/ledger.py). Tiap baris juga dicerminkan ke
+Google Sheets (tab events / trades / runs) kalau dikonfigurasi; gagal ke Sheets
+tidak pernah menghalangi CSV.
 """
 from . import compat  # noqa: F401
 import csv
 import json
 import os
+
+from . import sheets
 
 EVENTS = "state/events.csv"
 TRADES = "state/trades.csv"
@@ -54,7 +57,7 @@ TRADE_COLS = [
 RUN_COLS = [
     "run_at_utc", "status", "data_source", "last_bar_utc", "bars_processed",
     "events_emitted", "open_positions", "telegram", "engine_version",
-    "run_id", "commit_sha", "message",
+    "run_id", "commit_sha", "sheet", "message",
 ]
 
 
@@ -104,18 +107,48 @@ def read_rows(path) -> list[dict]:
         return []
 
 
+# Hasil tiap append ke Sheets selama proses ini. Supaya runs.csv bisa mencatat
+# apakah cermin benar-benar menerima baris -- cermin yang diam-diam menolak
+# berminggu-minggu adalah kegagalan yang dialami MEX.
+_PUSHES: list[bool] = []
+
+
+def _mirror(tab, cols, row):
+    if not sheets.configured():
+        return
+    _PUSHES.append(sheets.append(tab, cols, row))
+
+
+def sheet_status() -> str:
+    """ok / failed / partial_x/y / not_configured / unreachable -- untuk runs.csv."""
+    if not sheets.configured():
+        hint = sheets.missing()
+        return "incomplete" if hint else "not_configured"
+    if not _PUSHES:
+        return "ok" if sheets.reachable() else "unreachable"
+    if all(_PUSHES):
+        return "ok"
+    return "failed" if not any(_PUSHES) else f"partial_{sum(_PUSHES)}/{len(_PUSHES)}"
+
+
 def log_event(row):
     _append(EVENTS, EVENT_COLS, row)
+    _mirror("events", EVENT_COLS, row)
 
 
 def log_trade(row):
     row = dict(row)
     row.setdefault("no", len(read_rows(TRADES)) + 1)
     _append(TRADES, TRADE_COLS, row)
+    _mirror("trades", TRADE_COLS, row)
 
 
 def log_run(row):
+    # Status cermin dihitung SEBELUM baris run sendiri dicerminkan, supaya
+    # mencerminkan nasib baris events/trades run ini.
+    row = {**row, "sheet": row.get("sheet") or sheet_status()}
     _append(RUNS, RUN_COLS, row)
+    _mirror("runs", RUN_COLS, row)
 
 
 def last_run_at() -> str | None:

@@ -27,7 +27,7 @@ import snap.compat  # noqa: F401,E402
 
 import pandas as pd  # noqa: E402
 
-from snap import datafeed, ledger, notify, state, stats  # noqa: E402
+from snap import datafeed, ledger, notify, sheets, state, stats  # noqa: E402
 from snap.config import ENGINE_VERSION, load  # noqa: E402
 from snap.strategy import (compute_features, pos_from_dict, pos_to_dict,  # noqa: E402
                            step, trade_result)
@@ -309,6 +309,12 @@ def main():
     run = {"run_at_utc": pd.Timestamp.now(tz="UTC").isoformat(), "status": "ok",
            "engine_version": ENGINE_VERSION, "run_id": RUN_ID, "commit_sha": SHA,
            "bars_processed": 0, "events_emitted": 0, "message": ""}
+
+    hint = sheets.missing()
+    if hint:
+        print(f"[sheets] {hint}")
+    if not notify.configured():
+        print("[notify] TELEGRAM_BOT_TOKEN dan TELEGRAM_CHAT_ID harus DUA-DUANYA diisi")
 
     try:
         st = ledger.read_json(STATE, {})
