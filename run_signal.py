@@ -44,8 +44,8 @@ CONFIRM_TTL = pd.Timedelta("24h")
 SENT_IDS_KEPT = 300
 IDLE_LOG_EVERY = pd.Timedelta(os.environ.get("SNAP_IDLE_LOG_EVERY", "60min"))
 
-QUEUE_NOTE = ("\n\n⏳ <b>Tertahan {mins:.0f} menit di antrean kirim</b> "
-              "— harga sudah bergerak sejak pesan ini dibuat.")
+QUEUE_NOTE = ("\n\n⚠️ <b>Tertahan {mins:.0f} menit di antrean kirim</b> "
+              "— cek harga masih di antara stop dan target.")
 
 
 def _fingerprint(st) -> str:

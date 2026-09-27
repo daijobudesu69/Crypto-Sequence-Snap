@@ -126,39 +126,32 @@ def _pct(a, b) -> float:
 # --------------------------------------------------------------------------- #
 def signal_message(p: dict, symbol: str, source: str, delay_min: float,
                    paper: dict) -> str:
-    ctx = p.get("sig_ctx") or {}
+    """Template sinyal -- DITETAPKAN DEW (27 Sep 2026). Ringkas dengan sengaja:
+    jangan tambah baris tanpa persetujuannya. Satu-satunya tambahan adalah
+    baris peringatan telat, yang hanya muncul kalau pesan terkirim > 15 menit
+    setelah lilin tutup."""
     close0, stop, tgt = p["signal_close"], p["stop"], p["target"]
     risk_usd = paper["capital_usd"] * paper["risk_pct"] / 100.0
     qty = risk_usd / (close0 - stop) if close0 > stop else 0.0
     base = symbol.replace("USDT", "")
-    late = (f"\n\n⚠️ <b>Terkirim {delay_min:.0f} menit setelah lilin tutup</b> — "
-            "harga sudah bergerak dari open. Bot tetap mencatat entry di harga "
-            "OPEN; kalau Anda ikut manual, cek dulu harga masih di antara stop dan target."
-            if delay_min and delay_min > 15 else "")
-    rsi0, rsi1 = ctx.get("rsi_bar0"), ctx.get("rsi_bar1")
     entry_open = _plus4h(p["signal_bar"])             # lilin entry buka = lilin sinyal tutup
-    valid_until = _plus4h(entry_open)                 # = SIGNAL_TTL di run_signal.py
+    late = (f"\n\n⚠️ <b>Terlambat {delay_min:.0f} menit</b> — cek harga masih di antara stop dan target."
+            if delay_min and delay_min > 15 else "")
     return f"""🟢 <b>SEQUENCE SNAP v2 — LONG · {symbol}</b>
 Timeframe 4H · lilin sinyal {candle(p['signal_bar'])} sudah tutup
 
 🎯 <b>ENTRY: SEKARANG, market order</b>
-Lilin 4H berikutnya buka {wib(entry_open)} — saat pesan ini dibuat.
+Lilin 4H berikutnya buka {wib(entry_open)}
 Harga acuan: <b>{f(close0)}</b> (close lilin sinyal ≈ open lilin berikutnya)
-Bukan range: bot mencatat entry di harga OPEN lilin {wib(entry_open)[11:]} persis.
-Masuk manual & harga sudah bergeser? Tetap market order, catat fill Anda.
-<b>Lewati</b> kalau harga sudah ≤ stop atau ≥ target, atau kalau pesan ini
-baru terbaca setelah {wib(valid_until)}.
 
 🛑 <b>Stop: {f(stop)}</b> ({_pct(stop, close0):+.2f}% dari acuan, low lilin merah)
 ✅ <b>Target: {f(tgt)}</b> ({_pct(tgt, close0):+.2f}% dari acuan, 1.5R)
-Dua angka ini MATI: tidak ikut harga entry Anda, tidak ada trailing, posisi ditahan sampai salah satunya kena.
+Dua angka ini MATI: tidak ikut harga entry Anda, tidak ada trailing,
+posisi ditahan sampai salah satunya kena.
 
 📐 <b>Ukuran posisi</b> (paper ${f(paper['capital_usd'], 0)}, risiko {f(paper['risk_pct'], 1)}% = ${f(risk_usd, 2)})
 di harga acuan: <b>{f(qty)} {base}</b> · notional ${f(qty * close0, 2)}
-harga entry beda? qty = {f(risk_usd, 2)} ÷ (harga entry − {f(stop)})
-
-📊 RSI {f(rsi0, 1)} (lilin sebelumnya {f(rsi1, 1)}) · close {f(ctx.get('close_vs_ema200_pct'), 2)}% di atas EMA200 ({f(ctx.get('ema200_bar0'))})
-<i>sumber: {esc(source)} · id: {p['signal_id']}</i>{late}"""
+harga entry beda? qty = {f(risk_usd, 2)} ÷ (harga entry − {f(stop)}){late}"""
 
 
 def entry_message(pos, symbol: str, source: str) -> str:
