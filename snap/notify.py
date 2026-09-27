@@ -106,6 +106,12 @@ def wib(iso) -> str:
     return t.astimezone(WIB).strftime("%d-%m-%Y %H:%M WIB")
 
 
+def candle(iso) -> str:
+    """Lilin 4H yang BUKA di `iso`: 'dd-mm-yyyy HH:MM–HH:MM WIB'."""
+    a, b = wib(iso), wib(_plus4h(iso))
+    return f"{a[:-4]}–{b[11:16]} WIB"
+
+
 def _plus4h(iso) -> str:
     t = _dt.datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
     return (t + _dt.timedelta(hours=4)).isoformat()
@@ -151,7 +157,7 @@ qty = {f(risk_usd, 2)} ÷ (harga entry − {f(stop)})
 def entry_message(pos, symbol: str, source: str) -> str:
     dist = pos.entry_price - pos.stop
     return f"""📌 <b>ENTRY TERCATAT (paper) — {symbol}</b>
-<code>{wib(pos.entry_bar)}</code>
+<code>open lilin {wib(pos.entry_bar)}</code>
 
   harga entry (open) : <b>{f(pos.entry_price)}</b>
   vs close sinyal    : {_pct(pos.entry_price, pos.signal_close):+.3f}%
@@ -173,7 +179,7 @@ def exit_message(t: dict, symbol: str, summary: dict) -> str:
     warn = ("\n\n🚨 <b>ATURAN BERHENTI TERPICU</b>\n" + "\n".join(f"• {esc(r)}" for r in rules)
             if rules else "")
     return f"""{icon} <b>EXIT — {t['reason'].upper()} · {symbol}</b>
-<code>{wib(t['exit_bar'])}</code>
+<code>kena di lilin {candle(t['exit_bar'])}</code>
 
 {arrow} <b>{t['R_net']:+.2f} R bersih</b> ({t['R_gross']:+.2f} R kotor) · {usd(t['pnl_usd'])} paper
 entry {f(t['entry_price'])} → exit {f(t['exit_price'])}
@@ -214,7 +220,7 @@ def heartbeat_message(s: dict) -> str:
     return f"""💓 <b>Sequence Snap v2 — hidup</b>
 <code>{wib(s['now'])}</code>
 
-  bar terakhir diproses: {wib(s['last_bar']) if s['last_bar'] else '-'}
+  lilin terakhir diproses: tutup {wib(_plus4h(s['last_bar'])) if s['last_bar'] else '-'}
   sumber data: {esc(s['source'])}
   posisi terbuka: {n_open} dari {len(s['positions'])}
 {chr(10).join(lines)}{down_line}
