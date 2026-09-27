@@ -264,14 +264,15 @@ def test_config_default_sama_dengan_report():
     assert p.use_rsi_filter and p.use_trend_filter
     assert cfg["paper"] == {"capital_usd": 300.0, "risk_pct": 1.0, "commission_pct": 0.05}
     assert cfg["symbols"] == ["ETHUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "AVAXUSDT",
-                              "TRXUSDT", "NEARUSDT", "TAOUSDT"]
+                              "NEARUSDT"]
 
 
 def test_tiap_koin_punya_sumber_utama_yang_sah():
     assert set(datafeed.PRIMARY) == set(datafeed.SYMBOLS)
     assert set(datafeed.PRIMARY.values()) <= set(datafeed.SOURCES)
     assert all(s in datafeed.GATE for s in datafeed.SYMBOLS)
-    assert "XMRUSDT" not in datafeed.SYMBOLS, "XMR ditahan: kecocokan sinyal 37,5%"
+    for s in ("XMRUSDT", "TRXUSDT", "TAOUSDT"):
+        assert s not in datafeed.SYMBOLS, f"{s} dikeluarkan: kecocokan sinyal < 70%"
 
 
 def test_fetch_mencoba_sumber_utama_dulu():

@@ -39,8 +39,7 @@ UA = {"User-Agent": "Crypto-Sequence-Snap-forward-test/1.0 "
 # Telegram dibaca dari sini, jadi label tidak mungkin berbeda dari data yang
 # benar-benar diunduh (pelajaran MEX: kunci `symbol` di config pernah hanya
 # mengganti label sementara datanya tetap ETH).
-SYMBOLS = ["ETHUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "AVAXUSDT",
-           "TRXUSDT", "NEARUSDT", "TAOUSDT"]
+SYMBOLS = ["ETHUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "AVAXUSDT", "NEARUSDT"]
 
 # Sumber UTAMA per koin = yang paling dekat dengan Binance FUTURES (acuan
 # backtest), diukur 27 Sep 2026 -> docs/SPOT_VS_PERP.md. Aturan pilih ditetapkan
@@ -48,17 +47,16 @@ SYMBOLS = ["ETHUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "AVAXUSDT",
 # di ETH harga Gate 5x lebih dekat (0,009% vs 0,046%) tapi sinyalnya lebih
 # jauh (76% vs 87,5%), dan yang diperdagangkan adalah sinyal. Sumber lain tetap
 # jadi cadangan otomatis. Kecocokan sinyal sumber terpilih:
-#   ETH 87,5 · BNB 82,8 · XRP 90,0 · DOGE 100 · AVAX 90,0
-#   TRX 66,7 · NEAR 92,9 · TAO 66,7        (XMR 37,5 -> tidak dipakai)
+#   ETH 87,5 · BNB 82,8 · XRP 90,0 · DOGE 100 · AVAX 90,0 · NEAR 92,9
+# TRX (66,7), TAO (66,7) dan XMR (37,5) diukur tapi TIDAK dipakai: terlalu
+# banyak sinyal yang tidak ada di Binance futures. Keputusan Dew 27 Sep 2026.
 PRIMARY = {
     "ETHUSDT": "binance_spot_mirror",
     "BNBUSDT": "binance_spot_mirror",
     "XRPUSDT": "binance_spot_mirror",
     "DOGEUSDT": "gate_io_perp",
     "AVAXUSDT": "gate_io_perp",
-    "TRXUSDT": "gate_io_perp",
     "NEARUSDT": "gate_io_perp",
-    "TAOUSDT": "gate_io_perp",
 }
 # Kontrak Gate.io perp untuk tiap simbol yang pernah dipertimbangkan -- termasuk
 # kandidat yang belum masuk SYMBOLS, supaya tools/measure_spot_vs_perp.py bisa

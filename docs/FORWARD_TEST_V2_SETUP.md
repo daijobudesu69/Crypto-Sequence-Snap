@@ -1,7 +1,7 @@
 # Setup Forward Test — Sequence Snap Versi 2
 
 **Versi:** 2 — pola + RSI + **EMA200** (syarat #8: `close > EMA200`)
-**Watchlist:** ETH, BNB, XRP, DOGE, AVAX (sejak 26 Sep 2026) + TRX, NEAR, TAO (sejak 27 Sep 2026), USDT, 4H
+**Watchlist:** ETH, BNB, XRP, DOGE, AVAX (sejak 26 Sep 2026) + NEAR (sejak 27 Sep 2026), USDT, 4H
 **Uang:** **paper trading**, modal kertas **$300**, risiko 1% = **$3 per trade**
 **Eksekusi:** otomatis oleh bot di GitHub Actions — lihat [README](../README.md)
 **Disiapkan:** 26 September 2026
@@ -62,8 +62,8 @@ Dari Report 6.3, modal $300, **15 koin** (bukan watchlist ini):
 
 **Yang tidak saya ketahui:** angka Versi 2 khusus untuk watchlist ini tidak ada
 di Report. `docs/SPOT_VS_PERP.md` §3 menghitung V2 per koin di Binance futures
-(Jul 2024 – Ags 2026) sebagai pengganti kasarnya — tetap in-sample, dan untuk
-TRX/NEAR/TAO **tidak boleh** dipakai untuk memilih koin (data snooping).
+(Jul 2024 – Ags 2026) sebagai pengganti kasarnya — tetap in-sample, dan **tidak
+boleh** dipakai untuk memilih koin (data snooping).
 
 ---
 
@@ -95,8 +95,7 @@ menurut kecocokan sinyalnya dengan Binance futures:
 |---|---|---:|
 | ETH / BNB / XRP | Binance spot | 87,5% / 82,8% / 90,0% |
 | DOGE / AVAX / NEAR | Gate.io perp | 100% / 90,0% / 92,9% |
-| TRX / TAO | Gate.io perp | **66,7% / 66,7%** — baca hasilnya terpisah |
-| XMR | — | 37,5% — **ditahan** |
+| TRX / TAO / XMR | — | 66,7% / 66,7% / 37,5% — **tidak dipakai** |
 
 Sumber yang benar-benar menjawab dicatat di setiap baris log.
 
@@ -104,19 +103,19 @@ Sumber yang benar-benar menjawab dicatat di setiap baris log.
 
 ## 4. Ekspektasi frekuensi
 
-| Sumber | Trade/bulan, 8 koin |
+| Sumber | Trade/bulan, 6 koin |
 |---|---:|
-| V2 di Binance futures, per koin, Jul 2024 – Ags 2026 (`SPOT_VS_PERP.md` §3) | ~6,0 |
-| V3 (out-of-sample 2021–23): 0,59 per koin | ~4,7 |
+| V2 di Binance futures, per koin, Jul 2024 – Ags 2026 (`SPOT_VS_PERP.md` §3) | ~4,1 |
+| V3 (out-of-sample 2021–23): 0,59 per koin | ~3,5 |
 
-Rata-rata **~1 trade tiap 5–6 hari**. Filter EMA200 membuang ~37% trade Versi 1
+Rata-rata **~1 trade tiap 7–9 hari**. Filter EMA200 membuang ~37% trade Versi 1
 (503 → 315), yaitu semua yang muncul saat harga di bawah EMA200 — jadi di bear
 market bisa **berminggu-minggu tanpa sinyal**. Itu perilaku yang diharapkan,
 bukan bot rusak (heartbeat harian yang membuktikan bot masih hidup).
 
-**Sampel 100 trade butuh sekitar 17–20 bulan.** Korelasi antar koin tinggi
-(Report 7.2: breadth efektif ~1,5), jadi 8 koin tidak berarti 8× informasi —
-tapi memang mempercepat sampel.
+**Sampel 100 trade butuh sekitar 2–2,5 tahun.** Evaluasi antara tiap 20–25
+trade (~6 bulan) tetap berguna, tapi jangan memutuskan apa pun dari sana
+kecuali aturan berhenti §6 terpicu.
 
 ---
 

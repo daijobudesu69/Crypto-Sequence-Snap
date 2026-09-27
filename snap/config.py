@@ -17,7 +17,7 @@ DEFAULT = os.path.join(ROOT, "config.yaml")
 
 # Dicatat di setiap baris log. Naikkan setiap kali perilaku pencatatan atau
 # eksekusi berubah, supaya baris sebelum dan sesudahnya bisa dipisahkan.
-ENGINE_VERSION = "snap-v2-fwd-1.1.0"
+ENGINE_VERSION = "snap-v2-fwd-1.2.0"
 
 TOP_LEVEL = {"paper", "strategy"}
 PAPER_KEYS = {"capital_usd", "risk_pct", "commission_pct"}

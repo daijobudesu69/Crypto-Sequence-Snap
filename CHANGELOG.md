@@ -5,6 +5,18 @@ pencatatan dicatat di sini **dengan tanggal dan alasan** — forward test hanya
 bisa dibaca kalau setiap baris log bisa dicocokkan dengan aturan yang berlaku
 saat itu (`engine_version` di tiap baris).
 
+## snap-v2-fwd-1.2.0 — 2026-09-27
+
+Belum ada trade.
+
+- **Watchlist final 6 koin: ETH, BNB, XRP, DOGE, AVAX, NEAR.** Keputusan Dew
+  setelah melihat perbandingan sumber data per koin.
+- **TRX dan TAO dikeluarkan** (dipantau ~25 menit, nol sinyal, nol posisi).
+  Alasan: kecocokan sinyal sumber terbaiknya hanya 66,7% terhadap Binance
+  futures — tracking data, BUKAN hasil backtest-nya. Slot state keduanya
+  dibiarkan di position.json (kosong, tidak diproses).
+- Frekuensi ~3,5–4 trade/bulan → 100 trade ≈ 2–2,5 tahun.
+
 ## snap-v2-fwd-1.1.0 — 2026-09-27
 
 Belum ada trade (belum ada sinyal sejak mulai).

@@ -1,7 +1,7 @@
 # Crypto-Sequence-Snap — Forward Test Versi 2
 
 Forward test **paper trading** untuk strategi **Sequence Snap Versi 2** (pola +
-RSI + EMA200) di **ETH, BNB, XRP, DOGE, AVAX, TRX, NEAR, TAO** (USDT), timeframe 4H,
+RSI + EMA200) di **ETH, BNB, XRP, DOGE, AVAX, NEAR** (USDT), timeframe 4H,
 modal kertas **$300**. Bot di GitHub Actions mengecek ~45 detik setelah tiap
 lilin 4H tutup, mengeksekusi di atas kertas, mengirim sinyal ke Telegram
 **hanya kalau ada**, dan mencatat semuanya ke CSV di repo ini.
@@ -90,18 +90,19 @@ Binance futures (diukur 27 Sep 2026, [`docs/SPOT_VS_PERP.md`](docs/SPOT_VS_PERP.
 | XRP | Binance spot mirror | 90,0% |
 | DOGE | Gate.io perp | 100% |
 | AVAX | Gate.io perp | 90,0% |
-| TRX | Gate.io perp | **66,7%** |
 | NEAR | Gate.io perp | 92,9% |
-| TAO | Gate.io perp | **66,7%** |
-| ~~XMR~~ | — | 37,5% — **ditahan**, tidak dipakai |
+| ~~TRX~~ | (Gate.io perp) | 66,7% — **tidak dipakai** |
+| ~~TAO~~ | (Gate.io perp) | 66,7% — **tidak dipakai** |
+| ~~XMR~~ | (Gate.io perp) | 37,5% — **tidak dipakai** |
 
 Kecocokan = sinyal yang sama ÷ (sinyal futures + sinyal palsu). Sumber lainnya
 jadi cadangan otomatis. **Harga terdekat ≠ sinyal terdekat**: di ETH harga Gate
 5× lebih dekat, tapi sinyalnya lebih jauh — yang diperdagangkan adalah sinyal,
 jadi itu yang menentukan. Sumber yang dipakai dicatat di setiap baris log.
 
-TRX dan TAO: sekitar 1 dari 3 sinyal di sana berbeda dari yang dihasilkan data
-futures. Hasil forward test kedua koin itu harus dibaca terpisah.
+TRX, TAO dan XMR ikut diukur tapi dikeluarkan: di sana 1 dari 3 sinyal (XMR:
+lebih dari separuh) tidak ada di data futures, jadi hasil forward test-nya tidak
+bisa dibandingkan dengan backtest.
 
 Bot mengambil **1.500 bar** per koin (bukan 1.000 seperti MEX) supaya EMA200
 terbentuk penuh: sisa pengaruh nilai awal EMA di 1.500 bar ~0,00003%.
@@ -173,5 +174,5 @@ python tests/test_infra.py        # pipa kirim — harus hijau
 | **100 trade**, expectancy ≤ 0 | Strategi ditolak |
 | Sinyal live tidak cocok dengan 8 syarat | Hentikan, cari sebabnya |
 
-Frekuensi V2 di 8 koin ~5–6 trade/bulan, jadi **100 trade ≈ 17–20 bulan**.
+Frekuensi V2 di 6 koin ~3,5–4 trade/bulan, jadi **100 trade ≈ 2–2,5 tahun**.
 Acuan jujurnya Versi 3 (out-of-sample): **+0,19 R/trade, win rate ~49%**.
