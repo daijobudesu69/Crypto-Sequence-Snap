@@ -80,7 +80,7 @@ def main():
         pos = (slots.get(sym) or {}).get("position")
         last_close = None
         try:
-            feed = datafeed.fetch(sym, prefer=cfg["prefer_source"])
+            feed = datafeed.fetch(sym)
             sources.append(feed.source)
             last_close = float(feed.df["close"].iloc[-1])
         except Exception as e:  # noqa: BLE001

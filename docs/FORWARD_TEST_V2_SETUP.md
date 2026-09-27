@@ -1,7 +1,7 @@
 # Setup Forward Test — Sequence Snap Versi 2
 
 **Versi:** 2 — pola + RSI + **EMA200** (syarat #8: `close > EMA200`)
-**Watchlist:** ETHUSDT, BNBUSDT, XRPUSDT, DOGEUSDT, AVAXUSDT (4H)
+**Watchlist:** ETH, BNB, XRP, DOGE, AVAX (sejak 26 Sep 2026) + TRX, NEAR, TAO (sejak 27 Sep 2026), USDT, 4H
 **Uang:** **paper trading**, modal kertas **$300**, risiko 1% = **$3 per trade**
 **Eksekusi:** otomatis oleh bot di GitHub Actions — lihat [README](../README.md)
 **Disiapkan:** 26 September 2026
@@ -21,10 +21,9 @@
 ## 1. Checklist sebelum mulai
 
 - [ ] Baca [Report](Sequence%20Snap%20Report%20Trading%20Strategy.md) Bagian 2 (8 syarat entry) dan Bagian 10 (rekomendasi)
-- [ ] Jalankan workflow **"Ukur spot vs perp"** sekali (tab Actions → Run workflow).
-      Wajib hijau: ia mereplikasi contoh Report Bagian 3 dengan mesin repo ini.
-      Kalau merah, **jangan** mulai — mesinnya tidak sama dengan riset.
-- [ ] Baca hasilnya di `docs/SPOT_VS_PERP.md` — terutama kecocokan BNB dan AVAX
+- [x] Jalankan workflow **"Ukur spot vs perp"** — hijau 26 & 27 Sep 2026.
+      Contoh Report Bagian 3 cocok persis; jumlah trade V1 185/186.
+- [x] Sumber data dipilih per koin dari hasilnya (`docs/SPOT_VS_PERP.md`, §3 di bawah)
 - [ ] (nanti) Isi secret `TELEGRAM_BOT_TOKEN` dan `TELEGRAM_CHAT_ID`, lalu jalankan
       workflow **"Kirim pesan tes"**
 - [ ] (opsional) Pasang `pine/SequenceSnap_v2.pine` di TradingView untuk verifikasi visual
@@ -51,7 +50,7 @@ penyumbang besar mulai tertolak.
 
 ### Acuan hasil (bukan janji)
 
-Dari Report 6.3, modal $300, **15 koin** (bukan 5 koin watchlist ini):
+Dari Report 6.3, modal $300, **15 koin** (bukan watchlist ini):
 
 | | Versi 2 (2024–26, in-sample) | **Versi 3 = V2 di 2021–23 (out-of-sample)** |
 |---|---:|---:|
@@ -61,9 +60,10 @@ Dari Report 6.3, modal $300, **15 koin** (bukan 5 koin watchlist ini):
 | Max drawdown | 20,55 R | 11,79 R |
 | Kalah beruntun terpanjang | 12 | 7 |
 
-**Yang tidak saya ketahui:** angka Versi 2 khusus untuk 5 koin ini tidak ada di
-Report. Workflow "Ukur spot vs perp" menghitung ΣR V2 per koin (perp,
-Jul 2024 – Ags 2026) sebagai pengganti kasarnya — tetap in-sample.
+**Yang tidak saya ketahui:** angka Versi 2 khusus untuk watchlist ini tidak ada
+di Report. `docs/SPOT_VS_PERP.md` §3 menghitung V2 per koin di Binance futures
+(Jul 2024 – Ags 2026) sebagai pengganti kasarnya — tetap in-sample, dan untuk
+TRX/NEAR/TAO **tidak boleh** dipakai untuk memilih koin (data snooping).
 
 ---
 
@@ -87,28 +87,36 @@ isi `forward_test_log.csv` dengan harga fill Anda sendiri — bandingkan dengan
 
 ### Tracking error yang harus diingat
 
-Backtest memakai data **Binance perp**. Bot memakai **Binance spot** (API perp
-diblokir dari runner GitHub, HTTP 451), dengan Gate.io perp sebagai cadangan.
-Sebagian kecil sinyal akan berbeda dari yang backtest hasilkan. Besarnya diukur
-per koin di `docs/SPOT_VS_PERP.md`; sumber data dicatat di setiap baris log.
+Backtest memakai data **Binance futures**, yang diblokir dari runner GitHub
+(HTTP 451). Bot memakai Binance spot atau Gate.io perp, **dipilih per koin**
+menurut kecocokan sinyalnya dengan Binance futures:
+
+| Koin | Sumber | Kecocokan sinyal |
+|---|---|---:|
+| ETH / BNB / XRP | Binance spot | 87,5% / 82,8% / 90,0% |
+| DOGE / AVAX / NEAR | Gate.io perp | 100% / 90,0% / 92,9% |
+| TRX / TAO | Gate.io perp | **66,7% / 66,7%** — baca hasilnya terpisah |
+| XMR | — | 37,5% — **ditahan** |
+
+Sumber yang benar-benar menjawab dicatat di setiap baris log.
 
 ---
 
-## 4. Ekspektasi frekuensi — lebih jarang dari Versi 1
+## 4. Ekspektasi frekuensi
 
-| Sumber | Trade/bulan | Per koin/bulan | Untuk 5 koin |
-|---|---:|---:|---:|
-| V2, 15 koin, 2024–26 | 9,7 | 0,65 | **~3,2/bulan** |
-| V3, 8 koin, 2021–23 | 4,7 | 0,59 | **~2,9/bulan** |
+| Sumber | Trade/bulan, 8 koin |
+|---|---:|
+| V2 di Binance futures, per koin, Jul 2024 – Ags 2026 (`SPOT_VS_PERP.md` §3) | ~6,0 |
+| V3 (out-of-sample 2021–23): 0,59 per koin | ~4,7 |
 
-Rata-rata **~1 trade tiap 10 hari**. Filter EMA200 membuang ~37% trade Versi 1
+Rata-rata **~1 trade tiap 5–6 hari**. Filter EMA200 membuang ~37% trade Versi 1
 (503 → 315), yaitu semua yang muncul saat harga di bawah EMA200 — jadi di bear
-market bisa **berbulan-bulan tanpa sinyal**. Itu perilaku yang diharapkan, bukan bot rusak
-(heartbeat harian yang membuktikan bot masih hidup).
+market bisa **berminggu-minggu tanpa sinyal**. Itu perilaku yang diharapkan,
+bukan bot rusak (heartbeat harian yang membuktikan bot masih hidup).
 
-**Sampel 100 trade butuh sekitar 2,5–3 tahun** di 5 koin. Report 10.1
-menyarankan 8–15 koin justru karena ini. Menambah koin di tengah jalan mengubah
-eksperimennya — kalau mau, putuskan sebelum trade pertama.
+**Sampel 100 trade butuh sekitar 17–20 bulan.** Korelasi antar koin tinggi
+(Report 7.2: breadth efektif ~1,5), jadi 8 koin tidak berarti 8× informasi —
+tapi memang mempercepat sampel.
 
 ---
 

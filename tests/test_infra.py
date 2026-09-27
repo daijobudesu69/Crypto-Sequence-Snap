@@ -242,6 +242,7 @@ def test_config_menolak_kunci_asing_dan_short():
     tmp = tempfile.mkdtemp()
     try:
         for extra in ("strategy:\n  allow_short: true\n", "symbols: [BTCUSDT]\n",
+                      "prefer_source: gate_io_perp\n",
                       "strategy:\n  rsi_min_lng: 40\n"):
             p = os.path.join(tmp, "c.yaml")
             with open(p, "w") as fh:
@@ -262,7 +263,33 @@ def test_config_default_sama_dengan_report():
             p.take_profit_r, p.ma_length, p.ma_type) == (5, 0.05, 14, 40, 1.5, 200, "EMA")
     assert p.use_rsi_filter and p.use_trend_filter
     assert cfg["paper"] == {"capital_usd": 300.0, "risk_pct": 1.0, "commission_pct": 0.05}
-    assert cfg["symbols"] == ["ETHUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "AVAXUSDT"]
+    assert cfg["symbols"] == ["ETHUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "AVAXUSDT",
+                              "TRXUSDT", "NEARUSDT", "TAOUSDT"]
+
+
+def test_tiap_koin_punya_sumber_utama_yang_sah():
+    assert set(datafeed.PRIMARY) == set(datafeed.SYMBOLS)
+    assert set(datafeed.PRIMARY.values()) <= set(datafeed.SOURCES)
+    assert all(s in datafeed.GATE for s in datafeed.SYMBOLS)
+    assert "XMRUSDT" not in datafeed.SYMBOLS, "XMR ditahan: kecocokan sinyal 37,5%"
+
+
+def test_fetch_mencoba_sumber_utama_dulu():
+    calls = []
+    long_ = frame(uptrend_with_pattern(n=1100, red_at=900))
+    saved = (datafeed._from_binance_spot, datafeed._from_gate)
+    datafeed._from_binance_spot = lambda sym: calls.append("spot") or long_.copy()
+    datafeed._from_gate = lambda c: calls.append("gate") or long_.copy()
+    try:
+        assert datafeed.fetch("DOGEUSDT").source == "gate_io_perp" and calls == ["gate"]
+        calls.clear()
+        assert datafeed.fetch("ETHUSDT").source == "binance_spot_mirror" and calls == ["spot"]
+        calls.clear()
+        datafeed._from_gate = lambda c: calls.append("gate") or long_.iloc[:10]  # terlalu pendek
+        assert datafeed.fetch("DOGEUSDT").source == "binance_spot_mirror"
+        assert calls == ["gate", "spot"], "gagal di sumber utama -> cadangan"
+    finally:
+        datafeed._from_binance_spot, datafeed._from_gate = saved
 
 
 def test_sanity_check_menolak_bolong_dan_basi():

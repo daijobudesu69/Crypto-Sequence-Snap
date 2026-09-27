@@ -17,14 +17,15 @@ DEFAULT = os.path.join(ROOT, "config.yaml")
 
 # Dicatat di setiap baris log. Naikkan setiap kali perilaku pencatatan atau
 # eksekusi berubah, supaya baris sebelum dan sesudahnya bisa dipisahkan.
-ENGINE_VERSION = "snap-v2-fwd-1.0.0"
+ENGINE_VERSION = "snap-v2-fwd-1.1.0"
 
-TOP_LEVEL = {"prefer_source", "paper", "strategy"}
+TOP_LEVEL = {"paper", "strategy"}
 PAPER_KEYS = {"capital_usd", "risk_pct", "commission_pct"}
 RETIRED = {
     "symbols": "watchlist dikunci di snap/datafeed.py (SYMBOLS). Hapus baris ini.",
     "symbol": "watchlist dikunci di snap/datafeed.py (SYMBOLS). Hapus baris ini.",
     "timeframe": "timeframe dikunci di snap/datafeed.py (INTERVAL). Hapus baris ini.",
+    "prefer_source": "sumber data dipilih per koin di snap/datafeed.py (PRIMARY). Hapus baris ini.",
     "allow_short": "sisi short dilarang (t = 0,51, Report 4.2) dan tidak bisa dinyalakan.",
 }
 
@@ -54,8 +55,5 @@ def load(path: str = DEFAULT) -> dict:
                     "risk_pct": float(paper.get("risk_pct", 1.0)),
                     "commission_pct": float(paper.get("commission_pct", 0.05))}
 
-    cfg.setdefault("prefer_source", "binance_spot_mirror")
-    if cfg["prefer_source"] not in datafeed.SOURCES:
-        raise ValueError(f"config.yaml: prefer_source harus salah satu {datafeed.SOURCES}")
     cfg["symbols"] = list(datafeed.SYMBOLS)
     return cfg

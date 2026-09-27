@@ -249,7 +249,7 @@ def _handle(ev, symbol, source, cfg, st) -> list:
 def _process(sym, cfg, st, run, queued) -> dict | None:
     """Majukan mesin state satu simbol. None kalau feed-nya gagal."""
     try:
-        feed = datafeed.fetch(sym, prefer=cfg["prefer_source"])
+        feed = datafeed.fetch(sym)
     except Exception as e:  # noqa: BLE001
         print(f"[data] {sym} GAGAL: {e}")
         return None

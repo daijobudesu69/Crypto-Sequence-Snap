@@ -5,6 +5,24 @@ pencatatan dicatat di sini **dengan tanggal dan alasan** — forward test hanya
 bisa dibaca kalau setiap baris log bisa dicocokkan dengan aturan yang berlaku
 saat itu (`engine_version` di tiap baris).
 
+## snap-v2-fwd-1.1.0 — 2026-09-27
+
+Belum ada trade (belum ada sinyal sejak mulai).
+
+- **Watchlist + TRX, NEAR, TAO** (8 koin). Permintaan Dew; Report 10.1
+  menyarankan 8–15 koin karena 5 koin butuh ~2,5–3 tahun untuk 100 trade.
+  Belum dipastikan apakah ketiganya bagian dari universe 15 koin riset.
+- **XMR ditahan**: kecocokan sinyal sumber terbaiknya (Gate perp) hanya 37,5%
+  terhadap Binance futures, dan Binance spot sudah tidak memperdagangkan XMR.
+  Alasan penahanan adalah tracking data, BUKAN hasil backtest-nya.
+- **Sumber data dipilih per koin** (`snap/datafeed.py` PRIMARY), dari pengukuran
+  `docs/SPOT_VS_PERP.md` 27 Sep 2026. Aturan pilih ditetapkan sebelum hasil
+  dilihat: kecocokan sinyal tertinggi, seri → beda harga 90 hari terkecil.
+  Hasil: ETH/BNB/XRP → Binance spot; DOGE/AVAX/TRX/NEAR/TAO → Gate.io perp.
+  DOGE dan AVAX berpindah sumber (tanpa posisi terbuka, tidak ada yang terputus).
+- Kunci `prefer_source` di config.yaml dihapus dan kini ditolak — sumber per
+  koin tinggal di satu tempat.
+
 ## snap-v2-fwd-1.0.0 — 2026-09-26
 
 Repo dibuat. Belum ada trade.

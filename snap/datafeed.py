@@ -4,16 +4,15 @@ Diadaptasi dari Crypto-MEX (mex/datafeed.py), yang sudah berjalan di produksi.
 
 Backtest memakai arsip Binance USD-M PERP. API perp Binance (fapi.binance.com)
 menjawab HTTP 451 dari runner GitHub (IP AS diblokir), jadi forward test ini
-memakai dua pengganti -- persis seperti MEX:
+memakai dua pengganti:
 
-  1. data-api.binance.vision -- mirror publik Binance SPOT. Utama.
-  2. api.gateio.ws           -- Gate.io perp. Cadangan otomatis.
+  1. data-api.binance.vision -- mirror publik Binance SPOT (bursa sama, pasar beda)
+  2. api.gateio.ws           -- Gate.io PERP (pasar sama jenisnya, bursa beda)
 
-Ini TRACKING ERROR NYATA terhadap backtest. Di MEX, kecocokan sinyal spot vs
-perp terukur 94-97% untuk ETH/XRP/DOGE (dengan aturan MEX, bukan Sequence Snap).
-Untuk Sequence Snap -- dan untuk BNB dan AVAX sama sekali -- belum diukur;
-tools/measure_spot_vs_perp.py (workflow "Ukur spot vs perp") yang mengukurnya.
-Sumber yang menjawab dicatat di setiap baris log supaya bisa dipisah saat evaluasi.
+Ini TRACKING ERROR NYATA terhadap backtest. Sumber utama dipilih PER KOIN
+(PRIMARY di bawah) dari pengukuran tools/measure_spot_vs_perp.py. Sumber yang
+benar-benar menjawab dicatat di setiap baris log supaya bisa dipisah saat
+evaluasi.
 
 KENAPA 1.500 BAR, BUKAN 1.000
 EMA200 punya ekor panjang. Sisa pengaruh nilai awal setelah k bar adalah
@@ -40,7 +39,27 @@ UA = {"User-Agent": "Crypto-Sequence-Snap-forward-test/1.0 "
 # Telegram dibaca dari sini, jadi label tidak mungkin berbeda dari data yang
 # benar-benar diunduh (pelajaran MEX: kunci `symbol` di config pernah hanya
 # mengganti label sementara datanya tetap ETH).
-SYMBOLS = ["ETHUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "AVAXUSDT"]
+SYMBOLS = ["ETHUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "AVAXUSDT",
+           "TRXUSDT", "NEARUSDT", "TAOUSDT"]
+
+# Sumber UTAMA per koin = yang paling dekat dengan Binance FUTURES (acuan
+# backtest), diukur 27 Sep 2026 -> docs/SPOT_VS_PERP.md. Aturan pilih ditetapkan
+# sebelum hasil dilihat: kecocokan SINYAL tertinggi, bukan harga terdekat --
+# di ETH harga Gate 5x lebih dekat (0,009% vs 0,046%) tapi sinyalnya lebih
+# jauh (76% vs 87,5%), dan yang diperdagangkan adalah sinyal. Sumber lain tetap
+# jadi cadangan otomatis. Kecocokan sinyal sumber terpilih:
+#   ETH 87,5 · BNB 82,8 · XRP 90,0 · DOGE 100 · AVAX 90,0
+#   TRX 66,7 · NEAR 92,9 · TAO 66,7        (XMR 37,5 -> tidak dipakai)
+PRIMARY = {
+    "ETHUSDT": "binance_spot_mirror",
+    "BNBUSDT": "binance_spot_mirror",
+    "XRPUSDT": "binance_spot_mirror",
+    "DOGEUSDT": "gate_io_perp",
+    "AVAXUSDT": "gate_io_perp",
+    "TRXUSDT": "gate_io_perp",
+    "NEARUSDT": "gate_io_perp",
+    "TAOUSDT": "gate_io_perp",
+}
 # Kontrak Gate.io perp untuk tiap simbol yang pernah dipertimbangkan -- termasuk
 # kandidat yang belum masuk SYMBOLS, supaya tools/measure_spot_vs_perp.py bisa
 # mengukurnya dengan pemetaan yang sama persis dengan yang akan dipakai bot.
@@ -60,9 +79,9 @@ BAR = pd.Timedelta(INTERVAL)
 N_BARS = 1500
 MIN_BARS = 1000
 
-_missing = [s for s in SYMBOLS if s not in GATE]
+_missing = [s for s in SYMBOLS if s not in GATE or s not in PRIMARY]
 if _missing:
-    raise RuntimeError(f"GATE tidak memetakan {_missing}; failover tidak ada")
+    raise RuntimeError(f"GATE/PRIMARY tidak memetakan {_missing}")
 
 # Tidak ada gunanya diulang: geo-block, simbol salah, request cacat selalu
 # menjawab sama, dan mengulang 429 adalah cara mendapat ban 418 dari Binance.
@@ -162,11 +181,15 @@ def _from_gate(contract, n=N_BARS):
 SOURCES = ["binance_spot_mirror", "gate_io_perp"]
 
 
-def fetch(symbol: str, prefer: str | None = None) -> Feed:
-    """Bar 4H yang sudah TUTUP untuk `symbol`. Sumber pertama yang lolos sanity_check menang."""
-    if symbol not in GATE:
+def fetch(symbol: str) -> Feed:
+    """Bar 4H yang sudah TUTUP untuk `symbol`.
+
+    Sumber PRIMARY koin itu dicoba dulu, yang lain jadi cadangan. Sumber pertama
+    yang lolos sanity_check menang, dan namanya dicatat di tiap baris log.
+    """
+    if symbol not in PRIMARY:
         raise RuntimeError(f"{symbol} tidak ada di watchlist")
-    order = sorted(SOURCES, key=lambda s: s != prefer) if prefer else SOURCES
+    order = sorted(SOURCES, key=lambda s: s != PRIMARY[symbol])
     errors = []
     for name in order:
         try:

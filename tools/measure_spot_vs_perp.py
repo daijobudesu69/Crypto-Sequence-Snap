@@ -254,9 +254,8 @@ def main() -> int:
     for sym, n, sr, ex, wr, pm, ef in v2stats:
         L.append(f"| {sym} | {ef:%Y-%m-%d} | {n} | {pm:.2f} | {wr:.0f}% | {ex:+.3f} R | {sr:+.2f} |")
     L += ["", "Periode ini tumpang tindih dengan periode yang dipakai membangun strategi "
-          "(2024–2026), jadi angkanya batas atas yang optimis. TRX, XMR, NEAR, TAO "
-          "ditambahkan setelah riset; angka mereka di sini **tidak boleh** dipakai "
-          "untuk memilih atau membuang koin — itu data snooping.", ""]
+          "(2024–2026), jadi angkanya batas atas yang optimis. Angka ini **tidak boleh** "
+          "dipakai untuk memilih atau membuang koin — itu data snooping.", ""]
 
     # ── 4. Jumlah trade V1 vs setup V1 ─────────────────────────────────────
     L += ["## 4. Cek jumlah trade Versi 1 vs setup V1 (perp, 2024-01..2026-08)", "",

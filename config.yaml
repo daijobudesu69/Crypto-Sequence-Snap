@@ -7,13 +7,10 @@
 #  di CHANGELOG.md -- jangan diam-diam. Report 4.2 melarang menambah filter,
 #  mengubah target, dan menyalakan short.
 #
-#  Watchlist dan timeframe TIDAK diatur di sini -- dikunci di snap/datafeed.py
-#  (SYMBOLS, INTERVAL). Kunci `symbols`/`timeframe` di sini akan ditolak.
+#  Watchlist, timeframe dan sumber data per koin TIDAK diatur di sini --
+#  dikunci di snap/datafeed.py (SYMBOLS, INTERVAL, PRIMARY). Kunci
+#  `symbols`/`timeframe`/`prefer_source` di sini akan ditolak.
 # ─────────────────────────────────────────────────────────────────────────────
-
-# binance_spot_mirror = data-api.binance.vision (utama)
-# gate_io_perp        = cadangan otomatis kalau yang utama mati
-prefer_source: binance_spot_mirror
 
 paper:
   capital_usd:    300     # modal kertas. Risiko dihitung dari modal AWAL, tidak di-compound

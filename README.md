@@ -1,7 +1,7 @@
 # Crypto-Sequence-Snap — Forward Test Versi 2
 
 Forward test **paper trading** untuk strategi **Sequence Snap Versi 2** (pola +
-RSI + EMA200) di **ETHUSDT, BNBUSDT, XRPUSDT, DOGEUSDT, AVAXUSDT**, timeframe 4H,
+RSI + EMA200) di **ETH, BNB, XRP, DOGE, AVAX, TRX, NEAR, TAO** (USDT), timeframe 4H,
 modal kertas **$300**. Bot di GitHub Actions mengecek ~45 detik setelah tiap
 lilin 4H tutup, mengeksekusi di atas kertas, mengirim sinyal ke Telegram
 **hanya kalau ada**, dan mencatat semuanya ke CSV di repo ini.
@@ -78,16 +78,30 @@ berikutnya — yang menentukan adalah jeda setelah tutup.
 
 ## Sumber data — dan tracking error-nya
 
-Backtest memakai **Binance USD-M perp**. `fapi.binance.com` menjawab **HTTP 451**
-dari runner GitHub (IP AS diblokir), jadi bot memakai:
+Backtest memakai **Binance USD-M futures**. `fapi.binance.com` menjawab **HTTP 451**
+dari runner GitHub (IP AS diblokir), jadi bot memakai salah satu dari dua
+pengganti, **dipilih per koin** — mana yang sinyalnya paling dekat dengan
+Binance futures (diukur 27 Sep 2026, [`docs/SPOT_VS_PERP.md`](docs/SPOT_VS_PERP.md)):
 
-1. `data-api.binance.vision` — **Binance spot**, utama
-2. `api.gateio.ws` — Gate.io perp, cadangan otomatis
+| Koin | Sumber utama | Kecocokan sinyal vs Binance futures |
+|---|---|---:|
+| ETH | Binance spot mirror | 87,5% |
+| BNB | Binance spot mirror | 82,8% |
+| XRP | Binance spot mirror | 90,0% |
+| DOGE | Gate.io perp | 100% |
+| AVAX | Gate.io perp | 90,0% |
+| TRX | Gate.io perp | **66,7%** |
+| NEAR | Gate.io perp | 92,9% |
+| TAO | Gate.io perp | **66,7%** |
+| ~~XMR~~ | — | 37,5% — **ditahan**, tidak dipakai |
 
-Ini tracking error nyata. Besarnya per koin diukur oleh workflow
-**"Ukur spot vs perp"** → [`docs/SPOT_VS_PERP.md`](docs/SPOT_VS_PERP.md)
-(dibuat saat workflow itu pertama dijalankan). Sumber yang dipakai dicatat di
-setiap baris log.
+Kecocokan = sinyal yang sama ÷ (sinyal futures + sinyal palsu). Sumber lainnya
+jadi cadangan otomatis. **Harga terdekat ≠ sinyal terdekat**: di ETH harga Gate
+5× lebih dekat, tapi sinyalnya lebih jauh — yang diperdagangkan adalah sinyal,
+jadi itu yang menentukan. Sumber yang dipakai dicatat di setiap baris log.
+
+TRX dan TAO: sekitar 1 dari 3 sinyal di sana berbeda dari yang dihasilkan data
+futures. Hasil forward test kedua koin itu harus dibaca terpisah.
 
 Bot mengambil **1.500 bar** per koin (bukan 1.000 seperti MEX) supaya EMA200
 terbentuk penuh: sisa pengaruh nilai awal EMA di 1.500 bar ~0,00003%.
@@ -96,8 +110,8 @@ terbentuk penuh: sisa pengaruh nilai awal EMA di 1.500 bar ~0,00003%.
 
 ## Menyalakan
 
-1. **Actions → "Ukur spot vs perp" → Run workflow.** Wajib hijau sebelum mulai:
-   ia mereplikasi contoh Report Bagian 3 dengan mesin repo ini.
+1. **Actions → "Ukur spot vs perp" → Run workflow.** Sudah dijalankan 26 & 27
+   Sep 2026, hijau: contoh Report Bagian 3 cocok persis dengan mesin repo ini.
 2. **Pemantau sinyal jalan otomatis** lewat cron begitu repo ini ada di GitHub.
    Run pertama tiap koin **bootstrap flat**: mengambil lilin terbaru dan mulai
    dari sana, tanpa memutar ulang sejarah.
@@ -130,7 +144,7 @@ terbentuk penuh: sisa pengaruh nilai awal EMA di 1.500 bar ~0,00003%.
 | Path | Isi |
 |---|---|
 | `snap/strategy.py` | 8 syarat entry + mesin posisi paper |
-| `snap/datafeed.py` | Data 4H, 5 koin (watchlist dikunci di sini) |
+| `snap/datafeed.py` | Data 4H, watchlist + sumber per koin (dikunci di sini) |
 | `snap/notify.py` | Template dan pengiriman Telegram |
 | `snap/stats.py` | Ringkasan + pemeriksaan aturan berhenti |
 | `run_signal.py` / `run_heartbeat.py` | Driver yang dipanggil workflow |
@@ -138,7 +152,7 @@ terbentuk penuh: sisa pengaruh nilai awal EMA di 1.500 bar ~0,00003%.
 | `state/` | **Bukti forward test**: `trades.csv`, `events.csv`, `runs.csv`, `position.json` |
 | `forward_test_log.csv` | Template untuk fill manual Anda (opsional) |
 | `pine/SequenceSnap_v2.pine` | Script TradingView untuk verifikasi visual |
-| `tools/measure_spot_vs_perp.py` | Ukur tracking error + replikasi Report |
+| `tools/measure_spot_vs_perp.py` | Pilih sumber per koin + replikasi Report |
 | `tests/` | Parity dengan kode riset, 8 syarat, mesin posisi, pipa kirim |
 | `docs/` | Report, project log, setup V2, arsip setup V1 |
 
@@ -159,5 +173,5 @@ python tests/test_infra.py        # pipa kirim — harus hijau
 | **100 trade**, expectancy ≤ 0 | Strategi ditolak |
 | Sinyal live tidak cocok dengan 8 syarat | Hentikan, cari sebabnya |
 
-Frekuensi V2 di 5 koin ~3 trade/bulan, jadi **100 trade ≈ 2,5–3 tahun**.
+Frekuensi V2 di 8 koin ~5–6 trade/bulan, jadi **100 trade ≈ 17–20 bulan**.
 Acuan jujurnya Versi 3 (out-of-sample): **+0,19 R/trade, win rate ~49%**.
