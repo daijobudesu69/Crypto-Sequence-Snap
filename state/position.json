@@ -4,84 +4,34 @@
     "SIGNAL:ETHUSDT:20261002T0800-L",
     "SIGNAL:BNBUSDT:20261002T0800-L",
     "ENTRY:ETHUSDT:20261002T0800-L",
-    "ENTRY:BNBUSDT:20261002T0800-L"
+    "ENTRY:BNBUSDT:20261002T0800-L",
+    "EXIT:ETHUSDT:20261002T0800-L",
+    "EXIT:BNBUSDT:20261002T0800-L"
   ],
   "outbox": [],
   "symbols": {
     "ETHUSDT": {
-      "last_bar": "2026-10-02T12:00:00+00:00",
-      "position": {
-        "signal_id": "20261002T0800-L",
-        "signal_bar": "2026-10-02T08:00:00+00:00",
-        "entry_bar": "2026-10-02T12:00:00+00:00",
-        "signal_close": 2746.63,
-        "entry_price": 2746.63,
-        "stop": 2673.42,
-        "target": 2856.445,
-        "qty": 0.04097800846878839,
-        "risk_usd": 3.0,
-        "bars_held": 0,
-        "mae_pct": -1.9889828626353023,
-        "mfe_pct": 0.8392102321754136,
-        "notified": true,
-        "sig_ctx": {
-          "open": 2737.29,
-          "high": 2777.33,
-          "low": 2736.25,
-          "close": 2746.63,
-          "volume": 70066.5626,
-          "rsi_bar0": 61.5292,
-          "rsi_bar1": 59.8906,
-          "ema200_bar0": 2549.97519598,
-          "close_vs_ema200_pct": 7.712,
-          "low_bar5": 2673.42
-        }
-      },
+      "last_bar": "2026-10-02T16:00:00+00:00",
+      "position": null,
       "pending": null
     },
     "BNBUSDT": {
-      "last_bar": "2026-10-02T12:00:00+00:00",
-      "position": {
-        "signal_id": "20261002T0800-L",
-        "signal_bar": "2026-10-02T08:00:00+00:00",
-        "entry_bar": "2026-10-02T12:00:00+00:00",
-        "signal_close": 778.0,
-        "entry_price": 778.0,
-        "stop": 764.3,
-        "target": 798.5500000000001,
-        "qty": 0.21897810218978028,
-        "risk_usd": 3.0,
-        "bars_held": 0,
-        "mae_pct": -0.7390745501285378,
-        "mfe_pct": 0.8303341902313743,
-        "notified": true,
-        "sig_ctx": {
-          "open": 776.31,
-          "high": 780.52,
-          "low": 774.36,
-          "close": 778.0,
-          "volume": 27165.753,
-          "rsi_bar0": 59.4286,
-          "rsi_bar1": 58.0006,
-          "ema200_bar0": 739.73763011,
-          "close_vs_ema200_pct": 5.1724,
-          "low_bar5": 764.3
-        }
-      },
+      "last_bar": "2026-10-02T16:00:00+00:00",
+      "position": null,
       "pending": null
     },
     "XRPUSDT": {
-      "last_bar": "2026-10-02T12:00:00+00:00",
+      "last_bar": "2026-10-02T16:00:00+00:00",
       "position": null,
       "pending": null
     },
     "DOGEUSDT": {
-      "last_bar": "2026-10-02T12:00:00+00:00",
+      "last_bar": "2026-10-02T16:00:00+00:00",
       "position": null,
       "pending": null
     },
     "AVAXUSDT": {
-      "last_bar": "2026-10-02T12:00:00+00:00",
+      "last_bar": "2026-10-02T16:00:00+00:00",
       "position": null,
       "pending": null
     },
@@ -91,7 +41,7 @@
       "pending": null
     },
     "NEARUSDT": {
-      "last_bar": "2026-10-02T12:00:00+00:00",
+      "last_bar": "2026-10-02T16:00:00+00:00",
       "position": null,
       "pending": null
     },
@@ -102,6 +52,6 @@
     }
   },
   "engine_version": "snap-v2-fwd-1.3.0",
-  "updated_at": "2026-10-02T16:01:00.900618+00:00",
+  "updated_at": "2026-10-02T20:01:02.376072+00:00",
   "last_heartbeat_date": "2026-10-02"
 }
