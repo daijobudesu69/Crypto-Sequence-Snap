@@ -6,32 +6,33 @@
     "ENTRY:ETHUSDT:20261002T0800-L",
     "ENTRY:BNBUSDT:20261002T0800-L",
     "EXIT:ETHUSDT:20261002T0800-L",
-    "EXIT:BNBUSDT:20261002T0800-L"
+    "EXIT:BNBUSDT:20261002T0800-L",
+    "SIGNAL:NEARUSDT:20261010T1200-L"
   ],
   "outbox": [],
   "symbols": {
     "ETHUSDT": {
-      "last_bar": "2026-10-10T08:00:00+00:00",
+      "last_bar": "2026-10-10T12:00:00+00:00",
       "position": null,
       "pending": null
     },
     "BNBUSDT": {
-      "last_bar": "2026-10-10T08:00:00+00:00",
+      "last_bar": "2026-10-10T12:00:00+00:00",
       "position": null,
       "pending": null
     },
     "XRPUSDT": {
-      "last_bar": "2026-10-10T08:00:00+00:00",
+      "last_bar": "2026-10-10T12:00:00+00:00",
       "position": null,
       "pending": null
     },
     "DOGEUSDT": {
-      "last_bar": "2026-10-10T08:00:00+00:00",
+      "last_bar": "2026-10-10T12:00:00+00:00",
       "position": null,
       "pending": null
     },
     "AVAXUSDT": {
-      "last_bar": "2026-10-10T08:00:00+00:00",
+      "last_bar": "2026-10-10T12:00:00+00:00",
       "position": null,
       "pending": null
     },
@@ -41,9 +42,30 @@
       "pending": null
     },
     "NEARUSDT": {
-      "last_bar": "2026-10-10T08:00:00+00:00",
+      "last_bar": "2026-10-10T12:00:00+00:00",
       "position": null,
-      "pending": null
+      "pending": {
+        "signal_id": "20261010T1200-L",
+        "signal_bar": "2026-10-10T12:00:00+00:00",
+        "signal_close": 5.363,
+        "stop": 4.6321,
+        "target": 6.459350000000001,
+        "risk_pct_of_price": 13.62856610106284,
+        "entry_due": "2026-10-10T16:00:00+00:00",
+        "sig_ctx": {
+          "open": 5.3056,
+          "high": 5.4361,
+          "low": 5.2597,
+          "close": 5.363,
+          "volume": 1994076.0,
+          "rsi_bar0": 60.8182,
+          "rsi_bar1": 59.5432,
+          "ema200_bar0": 4.14667106,
+          "close_vs_ema200_pct": 29.3327,
+          "low_bar5": 4.6321
+        },
+        "notified": true
+      }
     },
     "TAOUSDT": {
       "last_bar": "2026-09-26T20:00:00+00:00",
@@ -52,6 +74,6 @@
     }
   },
   "engine_version": "snap-v2-fwd-1.3.0",
-  "updated_at": "2026-10-10T12:01:03.770569+00:00",
+  "updated_at": "2026-10-10T16:01:00.511267+00:00",
   "last_heartbeat_date": "2026-10-10"
 }
