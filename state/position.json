@@ -13,27 +13,27 @@
   "outbox": [],
   "symbols": {
     "ETHUSDT": {
-      "last_bar": "2026-10-14T12:00:00+00:00",
+      "last_bar": "2026-10-14T16:00:00+00:00",
       "position": null,
       "pending": null
     },
     "BNBUSDT": {
-      "last_bar": "2026-10-14T12:00:00+00:00",
+      "last_bar": "2026-10-14T16:00:00+00:00",
       "position": null,
       "pending": null
     },
     "XRPUSDT": {
-      "last_bar": "2026-10-14T12:00:00+00:00",
+      "last_bar": "2026-10-14T16:00:00+00:00",
       "position": null,
       "pending": null
     },
     "DOGEUSDT": {
-      "last_bar": "2026-10-14T12:00:00+00:00",
+      "last_bar": "2026-10-14T16:00:00+00:00",
       "position": null,
       "pending": null
     },
     "AVAXUSDT": {
-      "last_bar": "2026-10-14T12:00:00+00:00",
+      "last_bar": "2026-10-14T16:00:00+00:00",
       "position": null,
       "pending": null
     },
@@ -43,7 +43,7 @@
       "pending": null
     },
     "NEARUSDT": {
-      "last_bar": "2026-10-14T12:00:00+00:00",
+      "last_bar": "2026-10-14T16:00:00+00:00",
       "position": {
         "signal_id": "20261010T1200-L",
         "signal_bar": "2026-10-10T12:00:00+00:00",
@@ -54,8 +54,8 @@
         "target": 6.459350000000001,
         "qty": 4.105652114410841,
         "risk_usd": 3.0,
-        "bars_held": 23,
-        "mae_pct": -10.354665473260239,
+        "bars_held": 24,
+        "mae_pct": -11.091221003953166,
         "mfe_pct": 12.443126724845222,
         "notified": true,
         "sig_ctx": {
@@ -80,6 +80,6 @@
     }
   },
   "engine_version": "snap-v2-fwd-1.3.0",
-  "updated_at": "2026-10-14T16:00:54.772959+00:00",
+  "updated_at": "2026-10-14T20:00:56.518174+00:00",
   "last_heartbeat_date": "2026-10-14"
 }
