@@ -13,7 +13,7 @@ from _helpers import ROOT, frame, run_all, uptrend_with_pattern
 import numpy as np
 import pandas as pd
 
-from snap import indicators
+from snap import funding, indicators
 from snap.strategy import (Position, StrategyConfig, compute_features, setups, step,
                            trade_result)
 
@@ -289,6 +289,66 @@ def test_hasil_trade_contoh_report():
     r = trade_result(p, 2426.93, 0.05)
     assert abs(r["R_gross"] - 1.5003) < 0.001, r
     assert abs(r["R_net"] - 1.468) < 0.002, r
+
+
+
+# ── Biaya seperti backtest (1.4.0) ──────────────────────────────────────────
+def test_slippage_entry_exit_dan_qty_seperti_engine_riset():
+    """Riset engine.py: long masuk di open + slip, keluar di level - slip, qty
+    dari fill setelah slippage."""
+    rows = uptrend_with_pattern(n=420, red_at=392, pump_at=405)
+    df = frame(rows)
+    f = compute_features(df, V2)
+    ts = pd.DatetimeIndex(df["ts"])
+    slip = 0.05
+    pos = pending = None
+    entry = exit_ = None
+    for i in range(len(df)):
+        pos, pending, evs = step(f, ts, i, V2, pos, pending, 300.0, 1.0, slip, 0.05)
+        for e in evs:
+            if e["event"] == "ENTRY":
+                entry = e["pos"]
+            if e["event"] == "EXIT":
+                exit_ = e
+    assert entry.entry_price == f["open"][398] + slip
+    assert entry.entry_open == f["open"][398] and entry.slip == slip
+    assert abs(entry.qty * (entry.entry_price - entry.stop) - 3.0) < 1e-9
+    assert exit_["reason"] == "target"
+    assert exit_["exit_price"] == entry.target - slip and exit_["exit_ref"] == entry.target
+
+
+def test_gap_stop_dengan_slippage_terisi_di_open_minus_slip():
+    p = _pos()
+    p.slip = 0.01
+    pos, _, ev = _one_bar(93, 94, 92, 93.5, p)
+    assert ev[0]["reason"] == "stop" and abs(ev[0]["exit_price"] - 92.99) < 1e-12
+
+
+def test_trade_result_memotong_funding():
+    p = _pos(entry=100.0, stop=95.0, target=107.5)
+    base = trade_result(p, 107.5, 0.05)
+    r = trade_result(p, 107.5, 0.05, funding_usd=0.3)
+    assert abs(r["funding_R"] - 0.1) < 1e-12               # $0,30 / 1R $3
+    assert abs(r["R_net"] - (base["R_net"] - 0.1)) < 1e-12
+    assert abs(r["pnl_usd"] - (base["pnl_usd"] - 0.3)) < 1e-12
+    assert r["R_gross"] == base["R_gross"]
+    # R bersih = pnl / 1R, seperti riset (R = pnl / risk_unit).
+    assert abs(r["R_net"] - r["pnl_usd"] / 3.0) < 1e-12
+
+
+def test_funding_jendela_dan_notional_seperti_riset():
+    """Riset funding.biaya_per_trade: entry < t <= exit (waktu buka bar),
+    notional = qty x close bar 4H yang memuat t."""
+    ts = pd.date_range("2026-10-01", periods=8, freq="4h", tz="UTC")
+    closes = np.array([10, 11, 12, 13, 14, 15, 16, 17], float)
+    rates = [(ts[1], 0.001),                               # = open bar entry: TIDAK kena
+             (ts[2], 0.001),                               # kena, close bar 2 = 12
+             (ts[3] + pd.Timedelta("2h"), -0.002),         # tengah bar 3, close 13, diterima
+             (ts[5], 0.001),                               # = open bar exit: kena, close 15
+             (ts[6], 0.001)]                               # sesudah exit: TIDAK kena
+    r = funding.charge(rates, ts[1].isoformat(), ts[5], ts, closes, qty=2.0)
+    assert r["n"] == 3
+    assert abs(r["usd"] - (0.001 * 2 * 12 - 0.002 * 2 * 13 + 0.001 * 2 * 15)) < 1e-12
 
 
 if __name__ == "__main__":

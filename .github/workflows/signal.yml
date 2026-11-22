@@ -7,15 +7,26 @@ name: Sequence Snap signal
 # tidak menolong -- yang bermasalah GitHub yang tidak menjalankannya.
 #
 # Jadi cron TIDAK bertugas mengecek. Tugasnya hanya MENYALAKAN pemantau yang
-# lalu hidup ~5,5 jam dan mengecek sendiri dari dalam. Satu cron yang berhasil
-# menutupi 5,5 jam berikutnya; dengan concurrency group, jadwal yang jatuh saat
-# pemantau masih hidup ANTRE lalu langsung mulai begitu yang lama selesai.
+# lalu hidup ~5,5 jam dan mengecek sendiri dari dalam.
+#
+# ESTAFET (1.4.0, pola Crypto-FCL). Sampai 1.3.0 pemantau yang habis anggaran
+# waktunya hanya berhenti dan MENUNGGU cron berikutnya. Terukur 1-21 Nov 2026:
+# 34 jeda 1,3-4,8 jam, hampir tiap hari, dan SEMUANYA dimulai tepat saat
+# pemantau habis anggaran. Sekarang pemantau menyalakan penggantinya sendiri
+# (gh workflow run, antre di concurrency group dan mulai begitu job ini
+# selesai), jadi jeda saat serah terima ~1-2 menit. Cron tetap ada sebagai
+# cadangan kalau dispatch gagal. FCL dengan pola ini: jeda terpanjang 1j10m
+# (= log idle per jam) sejak 8 Nov.
+#
+# SERAH TERIMA TIDAK PERNAH DI ATAS TUTUP LILIN. Lewat batas lunak, pemantau
+# masih menunggu tutup lilin 4H berikutnya kalau jatuh sebelum batas keras,
+# memprosesnya, baru estafet. Jeda serah terima jadi selalu jatuh di tengah
+# lilin, bukan tepat saat sinyal lahir.
 #
 # BEDA DARI MEX -- lebih cepat: selain tiap 10 menit, pemantau juga bangun
 # ~45 detik setelah SETIAP lilin 4H tutup (00/04/08/12/16/20 UTC). Entry
 # Sequence Snap adalah open lilin berikutnya = detik lilin sinyal tutup, jadi
 # yang menentukan adalah jeda setelah tutup, bukan seberapa sering mengecek.
-# MEX bisa telat sampai 10 menit; di sini targetnya ~1 menit.
 #
 # Repo ini PUBLIK: menit GitHub Actions untuk repo publik tidak dibatasi, jadi
 # job panjang tidak memakan kuota. Di repo privat pola ini menghabiskan kuota
@@ -33,6 +44,7 @@ on:
 
 permissions:
   contents: write
+  actions: write      # dispatch pemantau pengganti (gh workflow run signal.yml)
 
 concurrency:
   group: snap-state
@@ -65,13 +77,22 @@ jobs:
           # Run yang memproses bar, memunculkan event, atau gagal selalu dicatat.
           SNAP_QUIET_IDLE: "1"
           MODE: ${{ inputs.mode || 'loop' }}
+          # Hanya untuk dispatch pengganti; di-unset sebelum python jalan.
+          GH_TOKEN_IN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
+          gh_token="${GH_TOKEN_IN:-}"
+          unset GH_TOKEN_IN
           INTERVAL=600                    # cek rutin tiap 10 menit
           AFTER_CLOSE=45                  # ... dan 45 detik setelah tiap lilin 4H tutup
-          DEADLINE=$(( $(date +%s) + 5*3600 + 30*60 ))
+          CYCLE_MAX=600                   # batas keras satu siklus (normalnya ~15 detik)
+          start=$(date +%s)
+          SOFT=$(( start + 5*3600 + 15*60 ))   # mulai cari titik serah terima
+          # Batas keras: siklus terakhir harus selesai sebelum timeout-minutes (350).
+          HARD=$(( start + 350*60 - CYCLE_MAX - 5*60 ))
           worst=0
           n=0
+          chain=0
 
           echo "[watch] mode=${MODE}"
           while :; do
@@ -83,13 +104,15 @@ jobs:
             # sudah selesai -- dan mengirim sinyal dua kali.
             bash tools/refresh_state.sh || true
 
-            python run_signal.py
-            rc=$?
+            # Semua perintah di loop ini `|| rc=$?`: siklus yang gagal tidak
+            # boleh mematikan pemantau (dan estafetnya).
+            rc=0
+            timeout -k 30 "$CYCLE_MAX" python run_signal.py || rc=$?
             if [ "$rc" -gt "$worst" ]; then worst=$rc; fi
 
             # Heartbeat harian menumpang di loop ini; run_heartbeat.py sendiri
             # yang memutuskan apakah hari ini sudah terkirim.
-            python run_heartbeat.py || echo "[watch] heartbeat gagal, diabaikan"
+            timeout -k 30 300 python run_heartbeat.py || echo "[watch] heartbeat gagal, diabaikan"
 
             if ! bash tools/save_state.sh "state: $(date -u +%Y-%m-%dT%H:%MZ)"; then
               echo "[watch] save_state gagal"
@@ -101,15 +124,34 @@ jobs:
 
             now=$(date +%s)
             next_close=$(( (now / 14400 + 1) * 14400 + AFTER_CLOSE ))
-            wait=$(( next_close - now ))
+            to_close=$(( next_close - now ))
+            wait=$to_close
             if [ "$wait" -gt "$INTERVAL" ]; then wait=$INTERVAL; fi
             if [ "$wait" -lt 5 ]; then wait=5; fi
-            if [ $(( now + wait )) -ge "$DEADLINE" ]; then
-              echo "[watch] anggaran waktu habis; cron berikutnya menyalakan ulang"
-              break
+            if [ $(( now + wait )) -ge "$SOFT" ]; then
+              # Lewat batas lunak. Tunggu tutup lilin berikutnya kalau masih muat
+              # sebelum batas keras -- serah terima tidak boleh jatuh di atasnya.
+              if [ "$to_close" -le "$INTERVAL" ] && [ $(( next_close )) -le "$HARD" ]; then
+                wait=$to_close
+                [ "$wait" -lt 5 ] && wait=5
+                echo "[watch] lewat batas lunak; menunggu tutup lilin dulu (${wait}s), lalu estafet"
+              else
+                echo "[watch] anggaran waktu habis; estafet ke pemantau pengganti"
+                chain=1
+                break
+              fi
             fi
             sleep "$wait"
           done
+
+          if [ "${MODE}" = "loop" ] && [ "$chain" = "1" ]; then
+            if GH_TOKEN="$gh_token" gh workflow run signal.yml --repo "$GITHUB_REPOSITORY" \
+                 --ref "${GITHUB_REF_NAME:-main}" -f mode=loop; then
+              echo "[watch] pemantau pengganti dinyalakan (antre, mulai begitu job ini selesai)"
+            else
+              echo "::warning::gagal menyalakan pemantau pengganti; menunggu cron"
+            fi
+          fi
 
           echo "[watch] selesai setelah ${n} kali cek (exit ${worst})"
           # Non-nol kalau ada pesan tersangkut di outbox, supaya GitHub mengirim

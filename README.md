@@ -57,14 +57,22 @@ diam-diam.
 ## Cara kerja
 
 ```
-cron (tiap 30 mnt)
+cron (tiap 30 mnt, cadangan)
   └─ menyalakan pemantau yang hidup ~5,5 jam
-       └─ tiap 10 menit + 45 detik setelah tiap lilin 4H tutup:
-            refresh_state.sh  → tarik state terbaru
-            run_signal.py     → proses bar baru → antre pesan → kirim Telegram
-            run_heartbeat.py  → 1 pesan/hari, 07:00 WIB
-            save_state.sh     → commit state/ ke repo (retry + merge by content)
+       ├─ tiap 10 menit + 45 detik setelah tiap lilin 4H tutup:
+       │    refresh_state.sh  → tarik state terbaru
+       │    run_signal.py     → proses bar baru → antre pesan → kirim Telegram
+       │    run_heartbeat.py  → 1 pesan/hari, 07:00 WIB
+       │    save_state.sh     → commit state/ ke repo (retry + merge by content)
+       └─ anggaran habis → ESTAFET: menyalakan pemantau pengganti sendiri
+                           (tidak pernah tepat di atas tutup lilin)
 ```
+
+**Estafet (1.4.0).** Sampai 1.3.0 pemantau yang habis anggaran hanya berhenti
+dan menunggu cron — terukur 1–21 Nov 2026: 34 jeda 1,3–4,8 jam, hampir tiap
+hari. Sekarang pemantau menyalakan penggantinya sendiri (pola Crypto-FCL), jadi
+jeda serah terima ~1–2 menit, dan serah terima selalu jatuh ≥13 menit sebelum
+tutup lilin 4H berikutnya. Cron hanya cadangan kalau dispatch gagal.
 
 Polanya diambil dari [Crypto-MEX](https://github.com/daijobudesu69/Crypto-MEX),
 termasuk semua pengaman yang lahir dari insidennya: pemantau panjang karena cron

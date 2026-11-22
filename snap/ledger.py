@@ -52,6 +52,8 @@ TRADE_COLS = [
     # provenance -- tidak ada di template manual
     "signal_id", "data_source", "engine_version", "R_kotor",
     "entry_vs_close_bar0_pct", "mae_pct", "mfe_pct", "notified",
+    # 1.4.0 -- rincian biaya yang SUDAH termasuk di R_realisasi / pnl_usd
+    "funding_R", "funding_n", "funding_source", "tick_size", "komisi_R",
 ]
 
 RUN_COLS = [

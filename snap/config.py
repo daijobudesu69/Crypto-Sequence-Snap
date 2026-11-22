@@ -17,10 +17,10 @@ DEFAULT = os.path.join(ROOT, "config.yaml")
 
 # Dicatat di setiap baris log. Naikkan setiap kali perilaku pencatatan atau
 # eksekusi berubah, supaya baris sebelum dan sesudahnya bisa dipisahkan.
-ENGINE_VERSION = "snap-v2-fwd-1.3.0"
+ENGINE_VERSION = "snap-v2-fwd-1.4.0"
 
 TOP_LEVEL = {"paper", "strategy"}
-PAPER_KEYS = {"capital_usd", "risk_pct", "commission_pct"}
+PAPER_KEYS = {"capital_usd", "risk_pct", "commission_pct", "slippage_ticks"}
 RETIRED = {
     "symbols": "watchlist dikunci di snap/datafeed.py (SYMBOLS). Hapus baris ini.",
     "symbol": "watchlist dikunci di snap/datafeed.py (SYMBOLS). Hapus baris ini.",
@@ -53,7 +53,10 @@ def load(path: str = DEFAULT) -> dict:
         raise ValueError(f"config.yaml: kunci paper tidak dikenal {sorted(bad)}")
     cfg["paper"] = {"capital_usd": float(paper.get("capital_usd", 300)),
                     "risk_pct": float(paper.get("risk_pct", 1.0)),
-                    "commission_pct": float(paper.get("commission_pct", 0.05))}
+                    "commission_pct": float(paper.get("commission_pct", 0.05)),
+                    "slippage_ticks": int(paper.get("slippage_ticks", 1))}
+    if cfg["paper"]["slippage_ticks"] < 0:
+        raise ValueError("config.yaml: paper.slippage_ticks tidak boleh negatif")
 
     cfg["symbols"] = list(datafeed.SYMBOLS)
     return cfg

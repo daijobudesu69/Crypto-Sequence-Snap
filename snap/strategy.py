@@ -14,7 +14,10 @@ Dua bagian, dengan dua sumber kebenaran yang berbeda:
 
 2. step() -- MESIN POSISI untuk forward test, bar demi bar:
 
-     A. sinyal dari bar sebelumnya -> entry di OPEN bar ini (market order)
+     A. sinyal dari bar sebelumnya -> entry di OPEN bar ini (market order),
+        ditambah slippage `slip` (harga) yang melawan posisi -- sama dengan
+        engine riset: long masuk di open + slip, keluar di level - slip, dan
+        qty dihitung dari harga fill SETELAH slippage
      B. stop dan target diuji di bar ini, termasuk bar entry itu sendiri
         (di Pine, strategy.exit sudah aktif begitu entry terisi)
      C. sinyal baru dievaluasi di CLOSE bar ini, hanya kalau posisi kosong
@@ -149,7 +152,7 @@ class Position:
     signal_bar: str          # bar yang CLOSE-nya menghasilkan sinyal (bar 0)
     entry_bar: str           # bar yang OPEN-nya jadi harga entry referensi
     signal_close: float      # close bar 0 -- dasar stop/target
-    entry_price: float       # open bar entry (paper fill, tanpa slippage)
+    entry_price: float       # paper fill = open bar entry + slippage
     stop: float              # low[5], beku
     target: float            # close[0] + 1,5R, beku
     qty: float               # paper: (modal x risiko%) / (entry - stop)
@@ -159,6 +162,10 @@ class Position:
     mfe_pct: float = 0.0
     notified: bool = True    # False kalau sinyalnya tidak pernah terkirim
     sig_ctx: dict = field(default_factory=dict)
+    # 1.4.0 -- biaya seperti backtest. Default 0 = posisi dari engine lama.
+    slip: float = 0.0        # slippage per sisi, dalam harga (ticks x tick)
+    tick: float = 0.0        # tick yang dipakai, untuk log
+    entry_open: Optional[float] = None   # open bar entry sebelum slippage
 
 
 def signal_id(bar: pd.Timestamp) -> str:
@@ -184,15 +191,20 @@ def make_pending(f: dict, ts: pd.DatetimeIndex, i: int, cfg: StrategyConfig) -> 
     }
 
 
-def _exit(pos: Position, bar, px: float, reason: str, f: dict, i: int, cfg) -> dict:
-    return {"event": "EXIT", "bar": bar, "pos": pos, "exit_price": float(px),
-            "reason": reason, "ctx": context(f, i, cfg)}
+def _exit(pos: Position, bar, raw: float, reason: str, f: dict, i: int, cfg) -> dict:
+    # Slippage melawan posisi long: keluar satu slip di bawah level/open.
+    return {"event": "EXIT", "bar": bar, "pos": pos, "exit_price": float(raw) - pos.slip,
+            "exit_ref": float(raw), "reason": reason, "ctx": context(f, i, cfg)}
 
 
 def step(f: dict, ts: pd.DatetimeIndex, i: int, cfg: StrategyConfig,
          pos: Optional[Position], pending: Optional[dict],
-         capital: float, risk_pct: float):
-    """Proses satu bar yang sudah tutup. Mengembalikan (position, pending, events)."""
+         capital: float, risk_pct: float, slip: float = 0.0, tick: float = 0.0):
+    """Proses satu bar yang sudah tutup. Mengembalikan (position, pending, events).
+
+    `slip` = slippage per sisi dalam harga (run_signal: slippage_ticks x tick
+    koin itu). Default 0 hanya untuk alat ukur dan test lama.
+    """
     events = []
     o, h, l = f["open"], f["high"], f["low"]
     bar = ts[i]
@@ -200,7 +212,7 @@ def step(f: dict, ts: pd.DatetimeIndex, i: int, cfg: StrategyConfig,
     # --- A. sinyal bar sebelumnya dieksekusi di OPEN bar ini ------------------
     just_entered = False
     if pending is not None and pos is None:
-        entry = float(o[i])
+        entry = float(o[i]) + slip
         risk_usd = capital * risk_pct / 100.0
         dist = entry - pending["stop"]
         pos = Position(
@@ -214,6 +226,7 @@ def step(f: dict, ts: pd.DatetimeIndex, i: int, cfg: StrategyConfig,
             risk_usd=risk_usd,
             notified=bool(pending.get("notified", True)),
             sig_ctx=dict(pending.get("sig_ctx") or {}),
+            slip=float(slip), tick=float(tick), entry_open=float(o[i]),
         )
         just_entered = True
         events.append({"event": "ENTRY", "bar": bar, "pos": pos, "pending": pending,
@@ -253,13 +266,16 @@ def step(f: dict, ts: pd.DatetimeIndex, i: int, cfg: StrategyConfig,
     return pos, pending, events
 
 
-def trade_result(pos: Position, exit_price: float, commission_pct: float) -> dict:
-    """Hasil trade dalam R dan USD kertas.
+def trade_result(pos: Position, exit_price: float, commission_pct: float,
+                 funding_usd: float = 0.0) -> dict:
+    """Hasil trade dalam R dan USD kertas -- definisi sama dengan backtest.
 
     R kotor  = (exit - entry) / (entry - stop)         -- satuan Report
-    R bersih = R kotor dikurangi komisi dua sisi, dalam R
-    Funding tidak dihitung: API funding Binance perp tidak terjangkau dari runner
-    GitHub (HTTP 451). Report: rata-rata funding +0,012 R per trade.
+    R bersih = R kotor - komisi dua sisi - funding, dalam R
+               (= riset: pnl/1R - funding_R, p7_versi_forward.py)
+    entry/exit di sini sudah termasuk slippage (lihat step()), jadi slippage
+    ikut di R kotor, persis seperti fill engine riset.
+    funding_usd positif = long membayar (snap/funding.py).
     """
     dist = pos.entry_price - pos.stop
     # Posisi yang gap di bawah stop di open-nya sendiri tidak punya jarak risiko
@@ -269,9 +285,12 @@ def trade_result(pos: Position, exit_price: float, commission_pct: float) -> dic
     fee_frac = commission_pct / 100.0
     fee_r = fee_frac * (pos.entry_price + exit_price) / base if base > 0 else 0.0
     qty = pos.qty
-    pnl = qty * (exit_price - pos.entry_price) - qty * fee_frac * (pos.entry_price + exit_price)
+    pnl = (qty * (exit_price - pos.entry_price)
+           - qty * fee_frac * (pos.entry_price + exit_price) - funding_usd)
+    funding_r = funding_usd / pos.risk_usd if pos.risk_usd else 0.0
     return {
-        "R_gross": r_gross, "R_net": r_gross - fee_r,
+        "R_gross": r_gross, "R_net": r_gross - fee_r - funding_r,
+        "fee_R": fee_r, "funding_R": funding_r, "funding_usd": funding_usd,
         "pnl_usd": pnl, "notional_usd": qty * pos.entry_price,
         "ret_pct": (exit_price / pos.entry_price - 1) * 100.0,
     }

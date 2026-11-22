@@ -16,6 +16,7 @@ paper:
   capital_usd:    300     # modal kertas. Risiko dihitung dari modal AWAL, tidak di-compound
   risk_pct:       1.0     # 1R = $3 di modal $300
   commission_pct: 0.05    # per sisi, sama dengan backtest
+  slippage_ticks: 1       # per sisi, melawan posisi -- sama dengan backtest (tick: datafeed.TICK)
 
 strategy:
   run_length:       5       # lilin hijau setelah lilin merah

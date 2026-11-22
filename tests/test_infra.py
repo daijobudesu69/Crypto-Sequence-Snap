@@ -19,7 +19,7 @@ import pandas as pd
 
 import run_heartbeat
 import run_signal
-from snap import datafeed, ledger, notify, sheets, stats
+from snap import datafeed, funding, ledger, notify, sheets, stats
 from snap.config import load
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import merge_state  # noqa: E402
@@ -35,8 +35,21 @@ def sandbox(n_bars=None, telegram_ok=True, configured=True, feed=None):
     tmp = tempfile.mkdtemp()
     shutil.copy(os.path.join(ROOT, "config.yaml"), tmp)
     os.chdir(tmp)
-    saved = (datafeed.fetch, notify.send, notify.configured)
-    state = {"n": n_bars, "ok": telegram_ok}
+    saved = (datafeed.fetch, notify.send, notify.configured, funding.fetch_rates)
+    # Funding palsu: +0,01% tiap 8 jam (00/08/16 UTC). state["funding_ok"] = False
+    # membuat Gate "mati".
+    state = {"n": n_bars, "ok": telegram_ok, "funding_ok": True, "funding_calls": 0}
+
+    def fake_rates(symbol, start, end, retries=3):
+        state["funding_calls"] += 1
+        if not state["funding_ok"]:
+            raise funding.Unavailable(f"{symbol} funding Gate gagal: tes")
+        t = pd.Timestamp(start).floor("8h")
+        out = []
+        while t <= pd.Timestamp(end) + pd.Timedelta("1h"):
+            out.append((t, 0.0001))
+            t += pd.Timedelta("8h")
+        return out
 
     def fake_fetch(symbol, prefer=None):
         if feed is not None:
@@ -56,11 +69,12 @@ def sandbox(n_bars=None, telegram_ok=True, configured=True, feed=None):
     datafeed.fetch = fake_fetch
     notify.send = fake_send
     notify.configured = lambda: configured
+    funding.fetch_rates = fake_rates
     try:
         with contextlib.redirect_stdout(io.StringIO()):
             yield state
     finally:
-        datafeed.fetch, notify.send, notify.configured = saved
+        datafeed.fetch, notify.send, notify.configured, funding.fetch_rates = saved
         os.chdir(old_cwd)
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -104,14 +118,87 @@ def test_sinyal_entry_exit_terkirim_sekali():
         assert [r["event"] for r in _events()] == ["SIGNAL", "ENTRY", "EXIT"]
         trades = ledger.read_rows(ledger.TRADES)
         assert len(trades) == 1 and trades[0]["alasan_exit"] == "target"
-        # Entry = open bar 398 = close bar sinyal (seri kontinu) -> R kotor tepat 1,5.
-        assert abs(float(trades[0]["R_kotor"]) - 1.5) < 1e-6
-        assert 0 < float(trades[0]["R_realisasi"]) < 1.5       # dikurangi komisi
-        assert trades[0]["koin"] == "ETHUSDT" and trades[0]["no"] == "1"
+        t = trades[0]
+        # Entry = open bar 398 = close bar sinyal (seri kontinu) -> tanpa biaya R
+        # kotor tepat 1,5. Slippage 1 tick (ETH 0,01) per sisi melawan posisi.
+        tick = datafeed.TICK["ETHUSDT"]
+        e = FULL["open"][398] + tick
+        stop = float(t["stop_rencana"])
+        x = float(t["target_rencana"]) - tick
+        assert abs(float(t["harga_entry_aktual"]) - e) < 1e-9
+        assert abs(float(t["harga_exit_aktual"]) - x) < 1e-9
+        assert abs(float(t["qty"]) * (e - stop) - 3.0) < 1e-6, "qty dari fill setelah slippage"
+        assert abs(float(t["R_kotor"]) - (x - e) / (e - stop)) < 1e-4
+        assert float(t["R_kotor"]) < 1.5
+        assert t["slippage_entry_tick"] == "1.0" and t["slippage_exit_tick"] == "1.0"
+        # Funding: long membayar tarif positif; R bersih = kotor - komisi - funding.
+        assert int(t["funding_n"]) > 0 and float(t["funding_dibayar_usd"]) > 0
+        assert t["funding_source"] == "gate_io_perp"
+        assert abs(float(t["R_realisasi"]) - (float(t["R_kotor"]) - float(t["komisi_R"])
+                                              - float(t["funding_R"]))) < 1e-3
+        assert abs(float(t["funding_R"]) - float(t["funding_dibayar_usd"]) / 3.0) < 1e-5
+        assert t["koin"] == "ETHUSDT" and t["no"] == "1"
+        assert "funding" in next(m for m in SENT if "EXIT — TARGET" in m)
         assert sum("ENTRY TERCATAT" in t for t in SENT) == 1
         assert sum("EXIT — TARGET" in t for t in SENT) == 1
         run_signal.main()
         assert len(ledger.read_rows(ledger.TRADES)) == 1
+
+
+def test_funding_gagal_bar_exit_diulang_tanpa_event_ganda():
+    """Gate mati saat EXIT -> bar exit ditahan, bukan dicatat tanpa funding."""
+    SENT.clear()
+    old_grace = run_signal.FUNDING_GRACE
+    run_signal.FUNDING_GRACE = pd.Timedelta(days=3650)     # data sintetis sudah tua
+    try:
+        with sandbox(n_bars=390) as s:
+            run_signal.main()
+            s["n"] = 398
+            run_signal.main()                              # SIGNAL
+            s["n"] = 420
+            s["funding_ok"] = False
+            run_signal.main()                              # ENTRY lalu EXIT tertahan
+            assert [r["event"] for r in _events()] == ["SIGNAL", "ENTRY"]
+            assert not ledger.read_rows(ledger.TRADES)
+            pos = _state()["symbols"]["ETHUSDT"]
+            assert pos["position"] is not None, "posisi tetap terbuka sampai funding ada"
+            assert pos["last_bar"] < FULL["ts"][405].isoformat()
+            run_signal.main()                              # masih mati: tetap tertahan
+            assert [r["event"] for r in _events()] == ["SIGNAL", "ENTRY"]
+            s["funding_ok"] = True
+            run_signal.main()                              # Gate hidup lagi
+            assert [r["event"] for r in _events()] == ["SIGNAL", "ENTRY", "EXIT"]
+            trades = ledger.read_rows(ledger.TRADES)
+            assert len(trades) == 1 and trades[0]["funding_source"] == "gate_io_perp"
+            assert sum("ENTRY TERCATAT" in t for t in SENT) == 1
+            assert sum("EXIT — TARGET" in t for t in SENT) == 1
+    finally:
+        run_signal.FUNDING_GRACE = old_grace
+
+
+def test_funding_mati_lewat_grace_dicatat_tanpa_funding_dan_ditandai():
+    SENT.clear()
+    old_grace = run_signal.FUNDING_GRACE
+    run_signal.FUNDING_GRACE = pd.Timedelta(0)
+    try:
+        with sandbox(n_bars=390) as s:
+            run_signal.main()
+            s["n"] = 398
+            run_signal.main()
+            s["n"] = 420
+            s["funding_ok"] = False
+            run_signal.main()
+            trades = ledger.read_rows(ledger.TRADES)
+            assert len(trades) == 1
+            t = trades[0]
+            assert t["funding_source"] == "tidak_tersedia"
+            assert t["funding_dibayar_usd"] == "" and t["funding_R"] == ""
+            assert "TIDAK TERSEDIA" in t["catatan"]
+            assert abs(float(t["R_realisasi"]) - (float(t["R_kotor"])
+                                                  - float(t["komisi_R"]))) < 1e-3
+            assert "tidak tersedia" in next(m for m in SENT if "EXIT" in m)
+    finally:
+        run_signal.FUNDING_GRACE = old_grace
 
 
 def test_telegram_gagal_tetap_di_outbox_lalu_terkirim_sekali():
@@ -262,7 +349,10 @@ def test_config_default_sama_dengan_report():
     assert (p.run_length, p.tolerance_pct, p.rsi_length, p.rsi_min_long,
             p.take_profit_r, p.ma_length, p.ma_type) == (5, 0.05, 14, 40, 1.5, 200, "EMA")
     assert p.use_rsi_filter and p.use_trend_filter
-    assert cfg["paper"] == {"capital_usd": 300.0, "risk_pct": 1.0, "commission_pct": 0.05}
+    assert cfg["paper"] == {"capital_usd": 300.0, "risk_pct": 1.0, "commission_pct": 0.05,
+                            "slippage_ticks": 1}
+    # Tick slippage = tick backtest (riset derive_tick_size), satu per koin.
+    assert set(datafeed.TICK) == set(datafeed.SYMBOLS)
     assert cfg["symbols"] == ["ETHUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "AVAXUSDT",
                               "NEARUSDT"]
 

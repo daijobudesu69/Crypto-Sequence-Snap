@@ -13,6 +13,13 @@ tiap bagiannya lahir dari insiden nyata di MEX:
   yang gagal dicoba ulang di run berikutnya, dan run yang mati setelah kirim
   tapi sebelum commit tidak mengirim dua kali saat diputar ulang.
 
+* BIAYA SEPERTI BACKTEST (1.4.0). Fill paper kena slippage `slippage_ticks`
+  tick per sisi (snap/strategy.py), dan tiap EXIT dipotong funding perp yang
+  benar-benar dibayar selama posisi terbuka (snap/funding.py). Funding diambil
+  SEBELUM efek apa pun dari bar exit dicatat: kalau Gate.io gagal, bar itu
+  diulang utuh di siklus berikutnya. Setelah FUNDING_GRACE tanpa jawaban, trade
+  tetap dicatat dengan funding_source = tidak_tersedia -- bukan nol diam-diam.
+
 * last_bar HANYA MAJU. Feed cadangan bisa berhenti satu-dua bar di belakang
   yang utama; memundurkan last_bar akan memutar ulang bar yang sudah dipakai
   step(), dan pending yang diputar ulang terisi di harga yang salah.
@@ -27,7 +34,7 @@ import snap.compat  # noqa: F401,E402
 
 import pandas as pd  # noqa: E402
 
-from snap import datafeed, ledger, notify, report, sheets, state, stats  # noqa: E402
+from snap import datafeed, funding, ledger, notify, report, sheets, state, stats  # noqa: E402
 from snap.config import ENGINE_VERSION, load  # noqa: E402
 from snap.strategy import (compute_features, pos_from_dict, pos_to_dict,  # noqa: E402
                            step, trade_result)
@@ -43,6 +50,8 @@ SIGNAL_TTL = pd.Timedelta(os.environ.get("SNAP_SIGNAL_TTL", "4h"))
 CONFIRM_TTL = pd.Timedelta("24h")
 SENT_IDS_KEPT = 300
 IDLE_LOG_EVERY = pd.Timedelta(os.environ.get("SNAP_IDLE_LOG_EVERY", "60min"))
+# Berapa lama EXIT boleh ditahan menunggu riwayat funding sebelum dicatat tanpa.
+FUNDING_GRACE = pd.Timedelta(os.environ.get("SNAP_FUNDING_GRACE", "6h"))
 
 QUEUE_NOTE = ("\n\n⚠️ <b>Tertahan {mins:.0f} menit di antrean kirim</b> "
               "— cek harga masih di antara stop dan target.")
@@ -203,9 +212,20 @@ def _handle(ev, symbol, source, cfg, st) -> list:
 
     if kind == "EXIT":
         pos, px = ev["pos"], ev["exit_price"]
-        res = trade_result(pos, px, cfg["paper"]["commission_pct"])
+        fund = ev.get("funding") or {"usd": 0.0, "n": 0, "source": "",
+                                     "status": "tidak_tersedia"}
+        fund_ok = fund["status"] == "ok"
+        res = trade_result(pos, px, cfg["paper"]["commission_pct"], funding_usd=fund["usd"])
         sc = pos.sig_ctx or {}
         notional = res["notional_usd"]
+        tick = pos.tick or None
+        slip_in = (round((pos.entry_price - pos.entry_open) / tick, 2)
+                   if tick and pos.entry_open is not None else None)
+        slip_out = (round((ev["exit_ref"] - px) / tick, 2)
+                    if tick and ev.get("exit_ref") is not None else None)
+        fnote = (f"funding {fund['n']}x dari {fund['source']}" if fund_ok else
+                 "funding TIDAK TERSEDIA (Gate.io gagal > FUNDING_GRACE) -- R tanpa funding")
+        note = f"paper: fill = open/level, slippage {slip_in}/{slip_out} tick; {fnote}"
         ledger.log_trade({
             "koin": symbol,
             "waktu_sinyal_utc": pos.signal_bar, "waktu_entry_utc": pos.entry_bar,
@@ -213,18 +233,24 @@ def _handle(ev, symbol, source, cfg, st) -> list:
             "rsi_bar0": sc.get("rsi_bar0"), "rsi_bar1": sc.get("rsi_bar1"),
             "ema200_bar0": sc.get("ema200_bar0"),
             "stop_rencana": pos.stop, "target_rencana": pos.target,
-            "harga_entry_aktual": pos.entry_price, "qty": round(pos.qty, 8),
+            "harga_entry_aktual": round(pos.entry_price, 10), "qty": round(pos.qty, 8),
             "notional": round(notional, 4),
             "dilewati_min_notional": notional < ledger.min_notional(symbol),
-            "harga_exit_aktual": px, "alasan_exit": ev["reason"],
+            "harga_exit_aktual": round(px, 10), "alasan_exit": ev["reason"],
             "waktu_exit_utc": bar.isoformat(), "bar_ditahan": pos.bars_held,
+            "slippage_entry_tick": slip_in, "slippage_exit_tick": slip_out,
+            "funding_dibayar_usd": round(fund["usd"], 6) if fund_ok else None,
             "pnl_usd": round(res["pnl_usd"], 4), "R_realisasi": round(res["R_net"], 4),
-            "catatan": "paper: fill = open/level, tanpa slippage & funding",
+            "catatan": note,
             "signal_id": pos.signal_id, "data_source": source,
             "engine_version": ENGINE_VERSION, "R_kotor": round(res["R_gross"], 4),
             "entry_vs_close_bar0_pct": round((pos.entry_price / pos.signal_close - 1) * 100, 4),
             "mae_pct": round(pos.mae_pct, 4), "mfe_pct": round(pos.mfe_pct, 4),
             "notified": pos.notified,
+            "funding_R": round(res["funding_R"], 6) if fund_ok else None,
+            "funding_n": fund["n"] if fund_ok else None,
+            "funding_source": fund["source"] if fund_ok else "tidak_tersedia",
+            "tick_size": tick, "komisi_R": round(res["fee_R"], 6),
         })
         ledger.log_event({
             **base, "signal_id": pos.signal_id,
@@ -238,12 +264,30 @@ def _handle(ev, symbol, source, cfg, st) -> list:
         if not pos.notified:
             return []
         t = {**res, "reason": ev["reason"], "exit_bar": bar.isoformat(),
+             "funding_ok": fund_ok, "funding_n": fund["n"], "slip_ticks": slip_in,
              "entry_price": pos.entry_price, "exit_price": px,
              "bars_held": pos.bars_held, "mae_pct": pos.mae_pct,
              "mfe_pct": pos.mfe_pct, "signal_id": pos.signal_id}
         return msg(pos.signal_id, notify.exit_message(t, symbol, _summary(cfg)),
                    now + CONFIRM_TTL)
     return []
+
+
+def _funding_for(sym, ev, df, ts) -> dict:
+    """Funding yang dibayar posisi yang baru keluar. Raise funding.Unavailable
+    selama masih dalam FUNDING_GRACE, supaya bar exit diulang."""
+    pos, bar = ev["pos"], ev["bar"]
+    try:
+        rates = funding.fetch_rates(sym, pd.Timestamp(pos.entry_bar), bar)
+    except funding.Unavailable as e:
+        age = pd.Timestamp.now(tz="UTC") - (pd.Timestamp(bar) + datafeed.BAR)
+        if age < FUNDING_GRACE:
+            raise
+        print(f"[funding] {e} -- sudah {age}, EXIT dicatat TANPA funding")
+        return {"usd": 0.0, "n": 0, "source": "", "status": "tidak_tersedia"}
+    res = funding.charge(rates, pos.entry_bar, bar, ts, df["close"].to_numpy(float), pos.qty)
+    print(f"[funding] {sym} {pos.signal_id}: {res['n']} pembayaran, ${res['usd']:+.4f}")
+    return {**res, "source": funding.SOURCE, "status": "ok"}
 
 
 def _process(sym, cfg, st, run, queued) -> dict | None:
@@ -288,9 +332,17 @@ def _process(sym, cfg, st, run, queued) -> dict | None:
           f"-> {len(df) - start} bar baru")
 
     paper = cfg["paper"]
+    tick = datafeed.TICK[sym]
+    slip = paper["slippage_ticks"] * tick
     for i in range(start, len(df)):
         pos, pending, events = step(f, ts, i, p, pos, pending,
-                                    paper["capital_usd"], paper["risk_pct"])
+                                    paper["capital_usd"], paper["risk_pct"], slip, tick)
+        # Funding diambil SEBELUM bar ini meninggalkan jejak apa pun. Kalau gagal
+        # (dan masih dalam FUNDING_GRACE), raise di sini membuat bar ini diulang
+        # utuh di siklus berikutnya -- tanpa event ganda di CSV.
+        for ev in events:
+            if ev["event"] == "EXIT":
+                ev["funding"] = _funding_for(sym, ev, df, ts)
         run["bars_processed"] += 1
         info["bars"] += 1
         for ev in events:

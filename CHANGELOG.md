@@ -5,6 +5,33 @@ pencatatan dicatat di sini **dengan tanggal dan alasan** — forward test hanya
 bisa dibaca kalau setiap baris log bisa dicocokkan dengan aturan yang berlaku
 saat itu (`engine_version` di tiap baris).
 
+## snap-v2-fwd-1.4.0 — 2026-11-22
+
+5 trade selesai (semua stop), tidak ada posisi terbuka saat perubahan ini.
+**Parameter strategi tidak berubah** — yang berubah biaya paper dan pemantau.
+
+- **Slippage paper = backtest.** 1 tick per sisi melawan posisi (`paper.slippage_ticks`
+  di config.yaml): entry = open + tick, exit = level/open − tick, qty dari fill
+  setelah slippage — sama dengan `engine.py` riset. Tick per koin = tick yang
+  dipakai backtest (`datafeed.TICK`; riset `derive_tick_size`, NEAR dari data lake).
+- **Funding dipotong.** Tiap EXIT: funding perp yang dibayar selama posisi
+  terbuka, rumus dan jendela sama dengan riset `funding.biaya_per_trade`
+  (entry_bar < t ≤ exit_bar, notional = qty × close bar 4H yang memuat t).
+  Tarif dari riwayat Gate.io perp — Binance fapi tetap HTTP 451 dari runner;
+  tracking error yang sama jenisnya dengan candle. Gate gagal → bar exit diulang
+  di siklus berikutnya; setelah 6 jam ditulis `funding_source = tidak_tersedia`.
+- `R_realisasi` = R kotor − komisi − funding (= R bersih backtest). Kolom baru di
+  `trades.csv`: `funding_R`, `funding_n`, `funding_source`, `tick_size`,
+  `komisi_R`; kolom template `slippage_*_tick` dan `funding_dibayar_usd` kini terisi.
+- **5 trade lama dihitung ulang** dengan rumus yang sama (`tools/restate_costs.py`):
+  total −5,124 R → −5,153 R (funding +0,002 s/d +0,007 R per trade; slippage
+  ≤ 0,003 R). `events.csv` lama tidak diubah (log mentah).
+- **Pemantau estafet** (signal.yml): menyalakan penggantinya sendiri saat
+  anggaran waktu habis, dan tidak pernah serah terima tepat di atas tutup lilin.
+  Alasan: 1–21 Nov terukur 34 jeda 1,3–4,8 jam, semuanya mulai saat pemantau
+  habis anggaran lalu menunggu cron yang telat. Sekalian: siklus yang gagal tidak
+  lagi mematikan pemantau (`bash -e` + `rc=$?` dulu langsung keluar).
+
 ## snap-v2-fwd-1.3.0 — 2026-09-27
 
 Belum ada trade.

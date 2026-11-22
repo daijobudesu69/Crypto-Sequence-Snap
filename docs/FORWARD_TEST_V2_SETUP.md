@@ -43,10 +43,14 @@ penyumbang besar mulai tertolak.
 |---|---|
 | Modal kertas | $300 |
 | Risiko per trade | 1% modal **awal**, tidak di-compound = **$3,00** |
-| Qty | `$3 ÷ (harga entry − stop)` |
+| Qty | `$3 ÷ (harga entry − stop)`, entry = fill **setelah** slippage |
 | Komisi | 0,05% per sisi (sama dengan backtest) |
-| Funding | **tidak dihitung** (API perp tidak terjangkau) — Report: rata-rata +0,012 R/trade |
-| Slippage | **tidak dihitung** — paper fill di open / di level stop-target persis |
+| Slippage | **1 tick per sisi** melawan posisi, tick = tick backtest (`datafeed.TICK`) — sejak 1.4.0 |
+| Funding | **dipotong** sejak 1.4.0: tarif Gate.io perp, rumus & jendela sama dengan backtest (`snap/funding.py`) |
+
+Sejak 1.4.0 `R_realisasi` = R kotor − komisi − funding, persis definisi R bersih
+backtest. 5 trade pertama (engine 1.3.0) sudah dihitung ulang dengan rumus yang
+sama (`tools/restate_costs.py`), jadi seluruh `trades.csv` satu definisi.
 
 ### Acuan hasil (bukan janji)
 
@@ -128,9 +132,12 @@ kecuali aturan berhenti §6 terpicu.
 | `state/runs.csv` | bot | Bukti hidup tiap run, sumber data, status Telegram |
 | `forward_test_log.csv` | Anda (opsional) | Fill manual Anda sendiri kalau ikut eksekusi |
 
-Kolom yang sengaja dibiarkan kosong oleh bot: `slippage_entry_tick`,
-`slippage_exit_tick`, `funding_dibayar_usd`. Tiga-tiganya hanya bisa diisi dari
-eksekusi sungguhan.
+Sejak 1.4.0 bot mengisi `slippage_entry_tick`, `slippage_exit_tick` (slippage
+ASUMSI paper, dalam tick, terhadap open/level — bukan terhadap close bar 0) dan
+`funding_dibayar_usd` (funding Gate.io perp yang benar-benar dibayar), plus
+rinciannya di `funding_R`, `funding_n`, `funding_source`, `komisi_R`. Kalau Anda
+ikut eksekusi, isi tiga kolom itu di `forward_test_log.csv` dengan angka nyata —
+selisihnya terhadap bot adalah biaya eksekusi Anda yang sebenarnya.
 
 ---
 

@@ -77,9 +77,24 @@ BAR = pd.Timedelta(INTERVAL)
 N_BARS = 1500
 MIN_BARS = 1000
 
-_missing = [s for s in SYMBOLS if s not in GATE or s not in PRIMARY]
+# Tick untuk slippage paper (1.4.0). SAMA dengan tick yang dipakai backtest:
+# riset data.derive_tick_size() = 10^-(desimal terbanyak di arsip Binance
+# futures 4H 2024-2026). NEAR tidak ada di arsip itu; 0,001 = desimal close
+# Binance futures 4H di data lake. Catatan: tickSize resmi Binance untuk BNB,
+# DOGE dan AVAX 10x lebih kasar (0,01 / 0,00001 / 0,001) -- tapi yang mau
+# disamakan di sini adalah BACKTEST, bukan bursa.
+TICK = {
+    "ETHUSDT": 0.01,
+    "BNBUSDT": 0.001,
+    "XRPUSDT": 0.0001,
+    "DOGEUSDT": 0.000001,
+    "AVAXUSDT": 0.0001,
+    "NEARUSDT": 0.001,
+}
+
+_missing = [s for s in SYMBOLS if s not in GATE or s not in PRIMARY or s not in TICK]
 if _missing:
-    raise RuntimeError(f"GATE/PRIMARY tidak memetakan {_missing}")
+    raise RuntimeError(f"GATE/PRIMARY/TICK tidak memetakan {_missing}")
 
 # Tidak ada gunanya diulang: geo-block, simbol salah, request cacat selalu
 # menjawab sama, dan mengulang 429 adalah cara mendapat ban 418 dari Binance.

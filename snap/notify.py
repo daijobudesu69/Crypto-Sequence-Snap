@@ -170,6 +170,16 @@ def entry_message(pos, symbol: str, source: str) -> str:
 sumber: {esc(source)} · id: {pos.signal_id}</i>"""
 
 
+def _costline(t: dict) -> str:
+    """Biaya yang sudah dipotong dari R bersih -- supaya selisih kotor/bersih terbaca."""
+    if t.get("funding_ok", True):
+        fund = f"funding {t.get('funding_R', 0.0):+.3f} R ({t.get('funding_n', 0)}x)"
+    else:
+        fund = "funding ❓ tidak tersedia"
+    return (f"<i>biaya: komisi {t.get('fee_R', 0.0):.3f} R · {fund} · "
+            f"slippage {t.get('slip_ticks', '?')} tick/sisi</i>")
+
+
 def exit_message(t: dict, symbol: str, summary: dict) -> str:
     win = t["R_net"] >= 0
     icon = "✅" if win else "🛑"
@@ -183,6 +193,7 @@ def exit_message(t: dict, symbol: str, summary: dict) -> str:
 
 {arrow} <b>{t['R_net']:+.2f} R bersih</b> ({t['R_gross']:+.2f} R kotor) · {usd(t['pnl_usd'])} paper
 entry {f(t['entry_price'])} → exit {f(t['exit_price'])}
+{_costline(t)}
 ditahan {t['bars_held']} lilin ({days:.1f} hari)
 MAE {t['mae_pct']:+.2f}% · MFE {t['mfe_pct']:+.2f}%
 
