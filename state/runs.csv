@@ -1460,3 +1460,4 @@ run_at_utc,status,data_source,last_bar_utc,bars_processed,events_emitted,open_po
 2026-11-27T17:01:44.826176+00:00,ok,"binance_spot_mirror,gate_io_perp",2026-11-27T12:00:00+00:00,0,0,,nothing_to_send,snap-v2-fwd-1.4.0,46021696421,768a76df,ok,
 2026-11-27T18:02:43.055486+00:00,ok,"binance_spot_mirror,gate_io_perp",2026-11-27T12:00:00+00:00,0,0,,nothing_to_send,snap-v2-fwd-1.4.0,46021696421,768a76df,ok,
 2026-11-27T19:03:42.618949+00:00,ok,"binance_spot_mirror,gate_io_perp",2026-11-27T12:00:00+00:00,0,0,,nothing_to_send,snap-v2-fwd-1.4.0,46021696421,768a76df,ok,
+2026-11-27T20:00:45.772001+00:00,ok,"binance_spot_mirror,gate_io_perp",2026-11-27T16:00:00+00:00,6,0,,nothing_to_send,snap-v2-fwd-1.4.0,46021696421,768a76df,ok,
